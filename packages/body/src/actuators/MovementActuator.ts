@@ -32,12 +32,20 @@ export class MovementActuator extends BaseActuator {
     this.isExecuting = true;
 
     const { x, y, z, range = 1 } = payload;
+    const botPos = this.bot.entity.position;
+    console.log(`[MOVE] Starting move from (${botPos.x.toFixed(1)}, ${botPos.y.toFixed(1)}, ${botPos.z.toFixed(1)}) to (${x}, ${y}, ${z}) range=${range}`);
 
     const goal = new goals.GoalNear(x, y, z, range);
 
     try {
       await (this.bot as any).pathfinder.goto(goal);
+      console.log(`[MOVE] Reached goal (${x}, ${y}, ${z})`);
+      // Ensure we complete the action (goal_reached event might have already done this)
+      if (this.currentActionId === actionId) {
+        this.complete(actionId, true);
+      }
     } catch (err: any) {
+      console.log(`[MOVE] Failed: ${err.message}`);
       this.complete(actionId, false, err.message);
     }
   }

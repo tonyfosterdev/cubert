@@ -71,7 +71,7 @@ services:
       minecraft:
         condition: service_healthy
 
-  scenario-init:
+  scenario:
     build:
       context: ./tools/scenario-runner
     environment:
@@ -85,7 +85,7 @@ services:
     depends_on:
       body:
         condition: service_started
-    restart: "no"
+    restart: unless-stopped
 
 volumes:
   minecraft-data:

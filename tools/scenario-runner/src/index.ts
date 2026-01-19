@@ -20,13 +20,21 @@ interface ScenarioConfig {
   setup: {
     commands: string;
   };
+  spawner?: {
+    commands: string;
+    intervalMs: number;
+  };
+}
+
+function timestamp(): string {
+  return new Date().toISOString();
 }
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitForConnection(
+async function connectWithRetry(
   host: string,
   port: number,
   password: string,
@@ -34,13 +42,9 @@ async function waitForConnection(
 ): Promise<Rcon> {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      console.log(`Attempting RCON connection (${attempt}/${maxAttempts})...`);
-      const rcon = await Rcon.connect({
-        host,
-        port,
-        password,
-      });
-      console.log('RCON connected!');
+      console.log(`[${timestamp()}] Connecting to RCON (${attempt}/${maxAttempts})...`);
+      const rcon = await Rcon.connect({ host, port, password });
+      console.log(`[${timestamp()}] RCON connected!`);
       return rcon;
     } catch (err) {
       if (attempt === maxAttempts) {
@@ -52,45 +56,41 @@ async function waitForConnection(
   throw new Error('Unreachable');
 }
 
-async function executeCommands(rcon: Rcon, commands: string[]): Promise<void> {
+async function executeCommands(rcon: Rcon, commands: string[], quiet = false): Promise<void> {
   for (const command of commands) {
     const trimmed = command.trim();
-
-    // Skip empty lines and comments
-    if (!trimmed || trimmed.startsWith('#')) {
-      continue;
-    }
+    if (!trimmed || trimmed.startsWith('#')) continue;
 
     try {
-      console.log(`> ${trimmed}`);
+      if (!quiet) console.log(`> ${trimmed}`);
       const response = await rcon.send(trimmed);
-      if (response) {
+      if (response && !quiet) {
         console.log(`  ${response}`);
       }
-      // Small delay between commands
       await sleep(100);
     } catch (err) {
-      console.error(`  Error: ${err}`);
+      console.error(`[${timestamp()}] Error executing "${trimmed}": ${err}`);
     }
   }
 }
 
 async function main() {
   const scenario = process.env.SCENARIO || 'gold-mining';
-  const mcHost = process.env.MC_HOST || 'minecraft';
+  const mcHost = process.env.MC_HOST || 'localhost';
   const rconPort = parseInt(process.env.RCON_PORT || '25575');
   const rconPassword = process.env.RCON_PASSWORD || 'minecraft';
   const botUsername = process.env.BOT_USERNAME || 'Cubert';
+  const spawnIntervalOverride = process.env.SPAWN_INTERVAL_MS ? parseInt(process.env.SPAWN_INTERVAL_MS) : null;
 
-  console.log(`=== Cubert Scenario Runner ===`);
-  console.log(`Scenario: ${scenario}`);
-  console.log(`Minecraft: ${mcHost}:${rconPort}`);
+  console.log(`[${timestamp()}] === Cubert Scenario Runner ===`);
+  console.log(`[${timestamp()}] Scenario: ${scenario}`);
+  console.log(`[${timestamp()}] Minecraft: ${mcHost}:${rconPort}`);
 
-  // Load scenario config - try Docker path first, then local path
+  // Find scenario directory
   const scenarioPaths = [
-    `/scenarios/${scenario}`,  // Docker mount
-    path.resolve(__dirname, `../../../scenarios/${scenario}`),  // Local (from src/)
-    path.resolve(__dirname, `../../scenarios/${scenario}`),  // Local (from dist/)
+    `/scenarios/${scenario}`,
+    path.resolve(__dirname, `../../../scenarios/${scenario}`),
+    path.resolve(__dirname, `../../scenarios/${scenario}`),
   ];
 
   let scenarioDir: string | null = null;
@@ -102,62 +102,109 @@ async function main() {
   }
 
   if (!scenarioDir) {
-    console.error(`Scenario config not found. Tried:`);
-    scenarioPaths.forEach(p => console.error(`  - ${path.join(p, 'scenario.json')}`));
+    console.error(`[${timestamp()}] Scenario config not found. Tried:`);
+    scenarioPaths.forEach((p) => console.error(`  - ${path.join(p, 'scenario.json')}`));
     process.exit(1);
   }
 
-  const configPath = path.join(scenarioDir, 'scenario.json');
-
-  const config: ScenarioConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-  console.log(`Loaded scenario: ${config.name} v${config.version}`);
-
-  // Wait for bot to join (give it time to connect)
-  console.log('Waiting for services to be ready...');
-  await sleep(5000);
+  const config: ScenarioConfig = JSON.parse(
+    fs.readFileSync(path.join(scenarioDir, 'scenario.json'), 'utf-8')
+  );
+  console.log(`[${timestamp()}] Loaded: ${config.name} v${config.version}`);
 
   // Connect to RCON
-  const rcon = await waitForConnection(mcHost, rconPort, rconPassword);
+  let rcon = await connectWithRetry(mcHost, rconPort, rconPassword);
 
-  try {
-    // Set game rules
-    console.log('\n--- Setting up game rules ---');
-    await executeCommands(rcon, [
-      `gamemode ${config.minecraft.gamemode} ${botUsername}`,
-      `difficulty ${config.minecraft.difficulty}`,
-      `time set ${config.minecraft.time}`,
-      `weather ${config.minecraft.weather}`,
-      'gamerule doDaylightCycle false',
-      'gamerule doWeatherCycle false',
-    ]);
+  // Handle disconnection with auto-reconnect
+  const setupReconnect = () => {
+    rcon.on('end', async () => {
+      console.log(`[${timestamp()}] RCON disconnected, reconnecting...`);
+      await sleep(2000);
+      rcon = await connectWithRetry(mcHost, rconPort, rconPassword);
+      setupReconnect();
+    });
+  };
+  setupReconnect();
 
-    // Load and execute setup commands
-    const commandsPath = path.join(scenarioDir, config.setup.commands);
-    if (fs.existsSync(commandsPath)) {
-      console.log('\n--- Executing scenario setup ---');
-      const commands = fs.readFileSync(commandsPath, 'utf-8').split('\n');
-      await executeCommands(rcon, commands);
+  // ========== PHASE 1: One-time setup ==========
+  console.log(`\n[${timestamp()}] --- Phase 1: World Setup ---`);
+
+  // Game rules
+  await executeCommands(rcon, [
+    `gamemode ${config.minecraft.gamemode} ${botUsername}`,
+    `difficulty ${config.minecraft.difficulty}`,
+    `time set ${config.minecraft.time}`,
+    `weather ${config.minecraft.weather}`,
+    'gamerule doDaylightCycle false',
+    'gamerule doWeatherCycle false',
+  ]);
+
+  // Setup commands (build arena, place chest, etc.)
+  const setupPath = path.join(scenarioDir, config.setup.commands);
+  if (fs.existsSync(setupPath)) {
+    const setupCommands = fs.readFileSync(setupPath, 'utf-8').split('\n');
+    await executeCommands(rcon, setupCommands);
+  }
+
+  // Wait for bot to join the game
+  console.log(`\n[${timestamp()}] --- Phase 2: Waiting for Bot ---`);
+  let botOnline = false;
+  for (let attempt = 1; attempt <= 30; attempt++) {
+    const response = await rcon.send(`data get entity ${botUsername}`);
+    if (response && !response.includes('No entity')) {
+      botOnline = true;
+      console.log(`[${timestamp()}] Bot "${botUsername}" is online!`);
+      break;
+    }
+    console.log(`[${timestamp()}] Waiting for bot to join (${attempt}/30)...`);
+    await sleep(2000);
+  }
+
+  if (!botOnline) {
+    console.error(`[${timestamp()}] Bot never joined, continuing anyway...`);
+  }
+
+  // Teleport and equip bot
+  console.log(`\n[${timestamp()}] --- Phase 3: Bot Setup ---`);
+  await executeCommands(rcon, [
+    `tp ${botUsername} ${config.spawn.x} ${config.spawn.y} ${config.spawn.z}`,
+    `give ${botUsername} iron_pickaxe 1`,
+  ]);
+
+  console.log(`\n[${timestamp()}] === Setup complete! ===`);
+
+  // ========== PHASE 2: Continuous spawner ==========
+  if (config.spawner) {
+    const spawnerPath = path.join(scenarioDir, config.spawner.commands);
+    if (!fs.existsSync(spawnerPath)) {
+      console.error(`[${timestamp()}] Spawner commands not found: ${spawnerPath}`);
+      process.exit(1);
     }
 
-    // Teleport bot to spawn
-    console.log('\n--- Teleporting bot ---');
-    await executeCommands(rcon, [
-      `tp ${botUsername} ${config.spawn.x} ${config.spawn.y} ${config.spawn.z}`,
-    ]);
+    const spawnCommands = fs.readFileSync(spawnerPath, 'utf-8').split('\n');
+    const intervalMs = spawnIntervalOverride ?? config.spawner.intervalMs;
 
-    // Give bot a pickaxe for mining
-    console.log('\n--- Equipping bot ---');
-    await executeCommands(rcon, [
-      `give ${botUsername} iron_pickaxe 1`,
-    ]);
+    console.log(`\n[${timestamp()}] --- Phase 4: Starting Spawner ---`);
+    console.log(`[${timestamp()}] Interval: ${intervalMs}ms`);
+    console.log(`[${timestamp()}] Press Ctrl+C to stop\n`);
 
-    console.log('\n=== Scenario setup complete! ===');
-  } finally {
+    // Initial spawn
+    console.log(`[${timestamp()}] Spawning resources...`);
+    await executeCommands(rcon, spawnCommands, true);
+
+    // Spawn loop
+    while (true) {
+      await sleep(intervalMs);
+      console.log(`[${timestamp()}] Spawning resources...`);
+      await executeCommands(rcon, spawnCommands, true);
+    }
+  } else {
+    console.log(`[${timestamp()}] No spawner configured, exiting.`);
     rcon.end();
   }
 }
 
 main().catch((err) => {
-  console.error('Scenario runner error:', err);
+  console.error(`[${timestamp()}] Error:`, err);
   process.exit(1);
 });

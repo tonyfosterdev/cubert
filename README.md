@@ -113,16 +113,21 @@ Connected to brain!
 Cubert Body ready!
 ```
 
-### 5. Initialize Scenario
+### 5. Start Scenario (setup + spawner)
 
 In a new terminal:
 
 ```bash
 cd tools/scenario-runner
-MC_HOST=localhost RCON_PORT=25575 RCON_PASSWORD=minecraft SCENARIO=gold-mining npm run dev
+MC_HOST=localhost npm run dev
 ```
 
-This sets up the gold mining arena with ore deposits, lava pit, and chest.
+This does three things:
+1. **World setup** - creates arena, lava pit, chest
+2. **Bot setup** - teleports bot to spawn, gives iron pickaxe
+3. **Spawner loop** - continuously spawns 3 gold ore every 15 seconds
+
+Keep this terminal running - it handles the continuous gold spawning.
 
 ## Observing the Bot
 
@@ -213,16 +218,17 @@ cubert/
 
 The default scenario creates:
 - Stone platform at y=63
-- 6 gold ore blocks scattered around
 - Lava pit (danger zone) at coordinates (5-8, 62, 5-8)
 - Chest at (-8, 64, 0) for deposits
+
+The gold spawner continuously places 3 gold ore blocks every 15 seconds.
 
 The bot will:
 1. Search for nearby gold ore
 2. Navigate to gold (avoiding lava)
 3. Mine the ore
 4. When inventory has 32+ gold items, find and deposit in chest
-5. Repeat
+5. Repeat (gold respawns via spawner)
 
 ## Troubleshooting
 

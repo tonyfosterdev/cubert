@@ -15,5 +15,9 @@
   },
   "setup": {
     "commands": "setup.mcfunction"
+  },
+  "spawner": {
+    "commands": "spawn-gold.mcfunction",
+    "intervalMs": 15000
   }
 }

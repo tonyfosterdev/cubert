@@ -19,25 +19,44 @@ export class MiningActuator extends BaseActuator {
 
     const { x, y, z } = payload;
     const position = new Vec3(x, y, z);
+    console.log(`[MINE] Attempting to mine block at (${x}, ${y}, ${z})`);
 
     try {
       const block = this.bot.blockAt(position);
 
       if (!block || block.name === 'air') {
+        console.log(`[MINE] No block at position (${x}, ${y}, ${z}) - found: ${block?.name || 'null'}`);
         this.complete(actionId, false, 'No block at position');
         return;
       }
 
-      // Equip the best tool for this block
-      if ((this.bot as any).tool) {
-        await (this.bot as any).tool.equipForBlock(block);
-      }
+      console.log(`[MINE] Found block: ${block.name} at (${x}, ${y}, ${z})`);
 
+      // Equip a pickaxe if we have one
+      await this.equipPickaxe();
+
+      console.log(`[MINE] Digging ${block.name}...`);
       await this.bot.dig(block);
+      console.log(`[MINE] Successfully mined ${block.name}`);
       this.complete(actionId, true);
     } catch (err: any) {
+      console.log(`[MINE] Failed: ${err.message}`);
       this.complete(actionId, false, err.message);
     }
+  }
+
+  private async equipPickaxe(): Promise<void> {
+    const pickaxeNames = ['netherite_pickaxe', 'diamond_pickaxe', 'iron_pickaxe', 'golden_pickaxe', 'stone_pickaxe', 'wooden_pickaxe'];
+
+    for (const pickName of pickaxeNames) {
+      const pickaxe = this.bot.inventory.items().find(item => item.name === pickName);
+      if (pickaxe) {
+        console.log(`[MINE] Equipping ${pickName}`);
+        await this.bot.equip(pickaxe, 'hand');
+        return;
+      }
+    }
+    console.log(`[MINE] No pickaxe found in inventory, mining with current item`);
   }
 
   cancel(): void {

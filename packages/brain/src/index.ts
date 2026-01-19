@@ -20,7 +20,7 @@ async function main() {
 
   // Log state changes
   stateMachine.on('stateChange', (newState: string) => {
-    console.log(`[State] -> ${newState}`);
+    console.log(`[${new Date().toISOString()}] [State] -> ${newState}`);
   });
 
   // Create and start gRPC server

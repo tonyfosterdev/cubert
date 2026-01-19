@@ -60,6 +60,7 @@ export const SearchingGoldState: State = {
   name: 'SEARCHING_GOLD',
 
   onEnter(context: StateContext): Action | null {
+    console.log(`[${new Date().toISOString()}] Searching for gold...`);
     return createAction('ACTION_TYPE_SPEAK', {
       speak: { message: 'Looking for gold...' },
     });
@@ -76,6 +77,8 @@ export const SearchingGoldState: State = {
     }
 
     if (goldBlocks.length > 0) {
+      console.log(`[${new Date().toISOString()}] Found ${goldBlocks.length} gold blocks: ${goldBlocks.map(b => `(${b.x},${b.y},${b.z})`).join(', ')}`);
+
       // Find gold that's not too close to lava
       const safeGold = goldBlocks.find((block) => {
         const lavaBlocks = sensorData.nearbyBlocks?.lavaBlocks || [];
@@ -91,8 +94,11 @@ export const SearchingGoldState: State = {
       });
 
       if (safeGold) {
+        console.log(`[${new Date().toISOString()}] Targeting gold at (${safeGold.x}, ${safeGold.y}, ${safeGold.z}), distance: ${safeGold.distance.toFixed(1)}`);
         memory.set('targetGold', safeGold);
         return { action: null, nextState: 'MOVING_TO_GOLD' };
+      } else {
+        console.log(`[${new Date().toISOString()}] All gold blocks too close to lava`);
       }
     }
 
@@ -112,9 +118,13 @@ export const MovingToGoldState: State = {
     const target = context.memory.get('targetGold') as BlockInfo;
     if (!target) return null;
 
-    return createAction('ACTION_TYPE_MOVE_TO', {
+    // Create action and store its ID so we can track completion
+    const action = createAction('ACTION_TYPE_MOVE_TO', {
       moveTo: { x: target.x, y: target.y, z: target.z, range: 3, sprint: false },
     });
+    context.memory.set('pendingActionId', action.actionId);
+    context.memory.set('moveStarted', true);
+    return action;
   },
 
   onUpdate(context: StateContext) {
@@ -123,6 +133,8 @@ export const MovingToGoldState: State = {
     // Check for lava hazard
     if (isNearLava(sensorData, 3)) {
       memory.delete('targetGold');
+      memory.delete('pendingActionId');
+      memory.delete('moveStarted');
       return {
         action: createAction('ACTION_TYPE_SPEAK', {
           speak: { message: 'Too close to lava! Finding safer gold...' },
@@ -131,26 +143,41 @@ export const MovingToGoldState: State = {
       };
     }
 
-    // Check if close enough to mine
     const target = memory.get('targetGold') as BlockInfo;
-    if (target && isWithinRange(sensorData, target, 4)) {
+    const pendingActionId = memory.get('pendingActionId') as string;
+    const pathStatus = sensorData.pathStatus;
+
+    // Check action feedback for our specific action
+    const feedback = sensorData.actionFeedback;
+    if (feedback && pendingActionId && feedback.actionId === pendingActionId) {
+      memory.delete('pendingActionId');
+
+      if (feedback.result === 'ACTION_RESULT_SUCCESS') {
+        // Movement completed successfully, now mine
+        return { action: null, nextState: 'MINING' };
+      } else if (feedback.result === 'ACTION_RESULT_FAILED') {
+        memory.delete('targetGold');
+        memory.delete('moveStarted');
+        return { action: null, nextState: 'SEARCHING_GOLD' };
+      }
+    }
+
+    // If we're close enough and not moving anymore, transition to mining
+    if (target && isWithinRange(sensorData, target, 4) && !pathStatus?.isMoving) {
+      memory.delete('pendingActionId');
+      memory.delete('moveStarted');
       return { action: null, nextState: 'MINING' };
     }
 
     // Check path status for failures
-    const pathStatus = sensorData.pathStatus;
     if (pathStatus?.state === 'PATH_STATE_FAILED') {
       memory.delete('targetGold');
+      memory.delete('pendingActionId');
+      memory.delete('moveStarted');
       return { action: null, nextState: 'SEARCHING_GOLD' };
     }
 
-    // Check action feedback
-    const feedback = sensorData.actionFeedback;
-    if (feedback?.result === 'ACTION_RESULT_FAILED') {
-      memory.delete('targetGold');
-      return { action: null, nextState: 'SEARCHING_GOLD' };
-    }
-
+    // Still waiting for movement to complete
     return { action: null, nextState: null };
   },
 };
@@ -164,6 +191,8 @@ export const MiningState: State = {
 
   onEnter(context: StateContext): Action | null {
     context.memory.set('miningStarted', false);
+    context.memory.delete('miningActionId');
+    context.memory.delete('miningCheckTime');
 
     return createAction('ACTION_TYPE_SPEAK', {
       speak: { message: 'Mining gold ore!' },
@@ -174,37 +203,53 @@ export const MiningState: State = {
     const { sensorData, memory } = context;
     const target = memory.get('targetGold') as BlockInfo;
 
+    // Send the mine action on first update
     if (!memory.get('miningStarted')) {
       memory.set('miningStarted', true);
       if (target) {
+        const action = createAction('ACTION_TYPE_MINE_BLOCK', {
+          mineBlock: { x: target.x, y: target.y, z: target.z },
+        });
+        memory.set('miningActionId', action.actionId);
+        console.log(`[${new Date().toISOString()}] Sending mine action for block at (${target.x}, ${target.y}, ${target.z})`);
         return {
-          action: createAction('ACTION_TYPE_MINE_BLOCK', {
-            mineBlock: { x: target.x, y: target.y, z: target.z },
-          }),
+          action,
           nextState: null,
         };
       }
     }
 
-    // Check for completion via action feedback
+    const miningActionId = memory.get('miningActionId') as string;
+
+    // Check for completion via action feedback for OUR action
     const feedback = sensorData.actionFeedback;
-    if (feedback) {
-      if (feedback.result === 'ACTION_RESULT_SUCCESS' || feedback.result === 'ACTION_RESULT_FAILED') {
-        memory.delete('targetGold');
-        memory.delete('miningStarted');
-        return { action: null, nextState: 'SEARCHING_GOLD' };
-      }
+    if (feedback && miningActionId && feedback.actionId === miningActionId) {
+      console.log(`[${new Date().toISOString()}] Mining action completed: ${feedback.result}`);
+      memory.delete('targetGold');
+      memory.delete('miningStarted');
+      memory.delete('miningActionId');
+      memory.delete('miningCheckTime');
+      return { action: null, nextState: 'SEARCHING_GOLD' };
     }
 
-    // Check if not mining anymore (block was mined)
-    if (!sensorData.pathStatus?.isMining && memory.get('miningStarted')) {
-      // Give it a moment, then transition
-      const miningCheckTime = memory.get('miningCheckTime');
+    // Check if actively mining
+    if (sensorData.pathStatus?.isMining) {
+      // Reset the timeout since we're still mining
+      memory.delete('miningCheckTime');
+      return { action: null, nextState: null };
+    }
+
+    // Not mining - give it time to start or complete
+    if (memory.get('miningStarted') && miningActionId) {
+      const miningCheckTime = memory.get('miningCheckTime') as number | undefined;
       if (!miningCheckTime) {
         memory.set('miningCheckTime', Date.now());
-      } else if (Date.now() - miningCheckTime > 1000) {
+      } else if (Date.now() - miningCheckTime > 5000) {
+        // 5 seconds without mining activity - assume done or failed
+        console.log(`[${new Date().toISOString()}] Mining timeout - assuming block mined`);
         memory.delete('targetGold');
         memory.delete('miningStarted');
+        memory.delete('miningActionId');
         memory.delete('miningCheckTime');
         return { action: null, nextState: 'SEARCHING_GOLD' };
       }

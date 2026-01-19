@@ -51,7 +51,7 @@ export class StateMachine extends EventEmitter {
     if (nextState && nextState !== this.currentState.name) {
       const newState = this.states.get(nextState);
       if (newState) {
-        console.log(`State transition: ${this.currentState.name} -> ${nextState}`);
+        console.log(`[${new Date().toISOString()}] State transition: ${this.currentState.name} -> ${nextState}`);
 
         if (this.currentState.onExit) {
           this.currentState.onExit(this.context);
