@@ -1,13 +1,15 @@
 import mineflayer, { Bot } from 'mineflayer';
 import { pathfinder, Movements } from 'mineflayer-pathfinder';
+import { EventEmitter } from 'events';
 import { BodyConfig } from '../config';
 
-export class BotManager {
+export class BotManager extends EventEmitter {
   private config: BodyConfig;
   private bot: Bot | null = null;
   private reconnecting = false;
 
   constructor(config: BodyConfig) {
+    super();
     this.config = config;
   }
 
@@ -28,6 +30,7 @@ export class BotManager {
       this.bot.once('spawn', () => {
         console.log(`Bot ${this.config.minecraft.username} spawned!`);
         this.setupPathfinder();
+        this.emit('botReady', this.bot);
         resolve(this.bot!);
       });
 

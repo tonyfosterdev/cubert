@@ -1,3 +1,4 @@
+import { Bot } from 'mineflayer';
 import { defaultConfig } from './config';
 import { BotManager } from './bot/BotManager';
 import { SensorAggregator } from './sensors';
@@ -11,13 +12,79 @@ async function main() {
   const botManager = new BotManager(config);
   const brainClient = new BrainClient(config);
 
+  let sensors: SensorAggregator | null = null;
+  let actuators: ActuatorRegistry | null = null;
+  let lastSendTime = 0;
+
+  // Setup bot listeners - called on initial connect and reconnect
+  function setupBotListeners(bot: Bot) {
+    console.log('[SETUP] Attaching bot listeners');
+
+    // Reinitialize sensors and actuators with new bot
+    sensors = new SensorAggregator(bot, config);
+    actuators = new ActuatorRegistry(bot);
+
+    // Handle action completion
+    actuators.on('actionComplete', (result) => {
+      console.log(`[EVENT] Action ${result.actionId} completed: ${result.success ? 'SUCCESS' : 'FAILED'}`);
+      brainClient.sendActionEvent({
+        actionId: result.actionId,
+        result: result.success ? 'ACTION_RESULT_SUCCESS' : 'ACTION_RESULT_FAILED',
+        errorMessage: result.errorMessage,
+        eventType: 'ACTION_EVENT_COMPLETED',
+      });
+    });
+
+    // Handle bot respawn (while gRPC is still connected)
+    bot.on('spawn', () => {
+      if (brainClient.isConnected()) {
+        console.log('[SPAWN] Bot respawned, sending connect event');
+        actuators?.cancelAll();
+        brainClient.sendConnectEvent(sensors!.collect());
+      }
+    });
+
+    // Sensor polling loop
+    bot.on('physicsTick', () => {
+      const now = Date.now();
+      if (now - lastSendTime >= config.sensors.sendIntervalMs) {
+        try {
+          if (sensors) {
+            brainClient.sendSensorData(sensors.collect());
+          }
+        } catch (err) {
+          console.error('Failed to collect/send sensor data:', err);
+        }
+        lastSendTime = now;
+      }
+    });
+
+    // Send connect event if brain is already connected
+    if (brainClient.isConnected() && sensors) {
+      console.log('[SETUP] Brain already connected, sending connect event');
+      actuators.cancelAll();
+      brainClient.sendConnectEvent(sensors.collect());
+    }
+  }
+
+  // Listen for bot ready events (initial + reconnects)
+  botManager.on('botReady', (bot: Bot) => {
+    console.log('[RECONNECT] Bot ready, setting up listeners');
+    setupBotListeners(bot);
+  });
+
   // Connect to Minecraft
   const bot = await botManager.connect();
   console.log('Connected to Minecraft!');
 
-  // Initialize sensors and actuators
-  const sensors = new SensorAggregator(bot, config);
-  const actuators = new ActuatorRegistry(bot);
+  // Handle brain connection/reconnection - reset state
+  brainClient.on('connected', () => {
+    console.log('[CONNECT] Brain connected, sending connect event');
+    actuators?.cancelAll();
+    if (sensors) {
+      brainClient.sendConnectEvent(sensors.collect());
+    }
+  });
 
   // Connect to brain
   try {
@@ -30,35 +97,9 @@ async function main() {
   // Handle incoming actions from brain
   brainClient.on('action', async (action) => {
     try {
-      await actuators.execute(action);
+      await actuators?.execute(action);
     } catch (err) {
       console.error('Failed to execute action:', err);
-    }
-  });
-
-  // Handle action completion feedback
-  actuators.on('actionComplete', (result) => {
-    sensors.setActionFeedback({
-      actionId: result.actionId,
-      result: result.success ? 'ACTION_RESULT_SUCCESS' : 'ACTION_RESULT_FAILED',
-      errorMessage: result.errorMessage,
-    });
-  });
-
-  // Sensor polling loop
-  let lastSendTime = 0;
-
-  bot.on('physicsTick', () => {
-    const now = Date.now();
-
-    if (now - lastSendTime >= config.sensors.sendIntervalMs) {
-      try {
-        const sensorData = sensors.collect();
-        brainClient.sendSensorData(sensorData);
-      } catch (err) {
-        console.error('Failed to collect/send sensor data:', err);
-      }
-      lastSendTime = now;
     }
   });
 

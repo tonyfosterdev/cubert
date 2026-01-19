@@ -13,7 +13,6 @@ export interface SensorData {
   health: HealthData;
   nearbyBlocks: BlocksData;
   pathStatus: PathStatus;
-  actionFeedback: ActionFeedback | null;
 }
 
 export interface PathStatus {
@@ -23,12 +22,6 @@ export interface PathStatus {
   targetBlock: { x: number; y: number; z: number; blockName: string; distance: number } | null;
 }
 
-export interface ActionFeedback {
-  actionId: string;
-  result: string;
-  errorMessage?: string;
-}
-
 export class SensorAggregator {
   private bot: Bot;
   private config: BodyConfig;
@@ -36,8 +29,6 @@ export class SensorAggregator {
   private blockSensor: BlockSensor;
   private inventorySensor: InventorySensor;
   private healthSensor: HealthSensor;
-
-  private lastActionFeedback: ActionFeedback | null = null;
 
   constructor(bot: Bot, config: BodyConfig) {
     this.bot = bot;
@@ -55,7 +46,7 @@ export class SensorAggregator {
   collect(): SensorData {
     const pathStatus = this.getPathStatus();
 
-    const data: SensorData = {
+    return {
       timestamp: Date.now().toString(),
       botId: this.config.minecraft.username,
       position: this.positionSensor.read(),
@@ -63,17 +54,7 @@ export class SensorAggregator {
       health: this.healthSensor.read(),
       nearbyBlocks: this.blockSensor.read(),
       pathStatus,
-      actionFeedback: this.lastActionFeedback,
     };
-
-    // Clear feedback after sending
-    this.lastActionFeedback = null;
-
-    return data;
-  }
-
-  setActionFeedback(feedback: ActionFeedback): void {
-    this.lastActionFeedback = feedback;
   }
 
   private getPathStatus(): PathStatus {

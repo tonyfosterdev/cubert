@@ -40,7 +40,7 @@ services:
       - ./packages/brain/src:/app/src
       - ./proto:/app/proto
       - brain-node-modules:/app/node_modules
-    command: npx nodemon -L --exec "npx tsx" src/index.ts
+    command: npx tsx src/index.ts
     depends_on:
       minecraft:
         condition: service_healthy
@@ -64,7 +64,7 @@ services:
       - ./packages/body/src:/app/src
       - ./proto:/app/proto
       - body-node-modules:/app/node_modules
-    command: npx nodemon -L --exec "npx tsx" src/index.ts
+    command: npx tsx src/index.ts
     depends_on:
       brain:
         condition: service_started

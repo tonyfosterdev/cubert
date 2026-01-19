@@ -1,4 +1,4 @@
-import { State, StateContext, SensorData, Action } from './State';
+import { State, StateContext, SensorData, Action, ActionEvent } from './State';
 import { EventEmitter } from 'events';
 
 export class StateMachine extends EventEmitter {
@@ -11,6 +11,7 @@ export class StateMachine extends EventEmitter {
     this.context = {
       sensorData: {} as SensorData,
       memory: new Map(),
+      lastEvent: null,
     };
   }
 
@@ -42,6 +43,7 @@ export class StateMachine extends EventEmitter {
     if (!this.currentState) return [];
 
     this.context.sensorData = sensorData;
+    this.context.lastEvent = null;
     const actions: Action[] = [];
 
     const { action, nextState } = this.currentState.onUpdate(this.context);
@@ -49,30 +51,72 @@ export class StateMachine extends EventEmitter {
     if (action) actions.push(action);
 
     if (nextState && nextState !== this.currentState.name) {
-      const newState = this.states.get(nextState);
-      if (newState) {
-        console.log(`[${new Date().toISOString()}] State transition: ${this.currentState.name} -> ${nextState}`);
-
-        if (this.currentState.onExit) {
-          this.currentState.onExit(this.context);
-        }
-
-        this.currentState = newState;
-
-        if (this.currentState.onEnter) {
-          const enterAction = this.currentState.onEnter(this.context);
-          if (enterAction) actions.push(enterAction);
-        }
-
-        this.emit('stateChange', nextState);
-      }
+      this.performTransition(nextState, actions);
     }
 
     return actions;
   }
 
+  handleEvent(event: ActionEvent): Action[] {
+    if (!this.currentState) return [];
+
+    this.context.lastEvent = event;
+
+    // If state has an event handler, use it
+    if (this.currentState.onEvent) {
+      const { action, nextState } = this.currentState.onEvent(this.context, event);
+      const actions: Action[] = [];
+
+      if (action) actions.push(action);
+
+      if (nextState && nextState !== this.currentState.name) {
+        this.performTransition(nextState, actions);
+      }
+
+      return actions;
+    }
+
+    return [];
+  }
+
+  private performTransition(nextStateName: string, actions: Action[]): void {
+    const newState = this.states.get(nextStateName);
+    if (newState) {
+      console.log(`[${new Date().toISOString()}] State transition: ${this.currentState!.name} -> ${nextStateName}`);
+
+      if (this.currentState!.onExit) {
+        this.currentState!.onExit(this.context);
+      }
+
+      this.currentState = newState;
+
+      if (this.currentState.onEnter) {
+        const enterAction = this.currentState.onEnter(this.context);
+        if (enterAction) actions.push(enterAction);
+      }
+
+      this.emit('stateChange', nextStateName);
+    }
+  }
+
   reset(): void {
     this.context.memory.clear();
     this.currentState = null;
+  }
+
+  resetToSafeState(): void {
+    // Clear all pending action IDs
+    this.context.memory.clear();
+
+    // Transition to searching state
+    const searchState = this.states.get('SEARCHING_GOLD');
+    if (searchState) {
+      if (this.currentState?.onExit) {
+        this.currentState.onExit(this.context);
+      }
+      this.currentState = searchState;
+      console.log('[RESET] State machine reset to SEARCHING_GOLD');
+      this.emit('stateChange', 'SEARCHING_GOLD');
+    }
   }
 }

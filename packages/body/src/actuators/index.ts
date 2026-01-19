@@ -91,6 +91,13 @@ export class ActuatorRegistry extends EventEmitter {
     this.movement.cancel();
     this.mining.cancel();
   }
+
+  cancelAll(): void {
+    this.movement.cancel();
+    this.mining.cancel();
+    this.inventory.cancel();
+    this.chat.cancel();
+  }
 }
 
 export { MovementActuator } from './MovementActuator';

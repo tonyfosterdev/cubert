@@ -4,6 +4,13 @@ import { EventEmitter } from 'events';
 import { BodyConfig } from '../config';
 import { SensorData } from '../sensors';
 import { Action } from '../actuators';
+
+export interface ActionEvent {
+  actionId: string;
+  result: string;
+  errorMessage?: string;
+  eventType: string;
+}
 import path from 'path';
 
 const PROTO_PATH = process.env.PROTO_PATH || path.resolve(__dirname, '../../../../proto/cubert.proto');
@@ -77,6 +84,9 @@ export class BrainClient extends EventEmitter {
       this.connected = false;
       this.scheduleReconnect();
     });
+
+    // Emit connected event for connection recovery handling
+    this.emit('connected');
   }
 
   sendSensorData(data: SensorData): void {
@@ -84,12 +94,56 @@ export class BrainClient extends EventEmitter {
       return;
     }
 
-    const message = this.serializeSensorData(data);
+    const message = {
+      sensorData: this.serializeSensorData(data),
+    };
 
     try {
       this.stream.write(message);
     } catch (err) {
       console.error('Failed to send sensor data:', err);
+    }
+  }
+
+  sendActionEvent(event: ActionEvent): void {
+    if (!this.stream || !this.connected) {
+      return;
+    }
+
+    const message = {
+      actionEvent: {
+        timestamp: Date.now().toString(),
+        actionId: event.actionId,
+        result: event.result,
+        errorMessage: event.errorMessage,
+        eventType: event.eventType,
+      },
+    };
+
+    try {
+      this.stream.write(message);
+    } catch (err) {
+      console.error('Failed to send action event:', err);
+    }
+  }
+
+  sendConnectEvent(sensorData: SensorData): void {
+    if (!this.stream || !this.connected) {
+      return;
+    }
+
+    const message = {
+      connectEvent: {
+        timestamp: Date.now().toString(),
+        initialSensorData: this.serializeSensorData(sensorData),
+      },
+    };
+
+    try {
+      this.stream.write(message);
+      console.log('[CONNECT] Sent connect event to brain');
+    } catch (err) {
+      console.error('Failed to send connect event:', err);
     }
   }
 
@@ -119,13 +173,6 @@ export class BrainClient extends EventEmitter {
         isMining: data.pathStatus.isMining,
         targetBlock: data.pathStatus.targetBlock,
       },
-      actionFeedback: data.actionFeedback
-        ? {
-            actionId: data.actionFeedback.actionId,
-            result: data.actionFeedback.result,
-            errorMessage: data.actionFeedback.errorMessage,
-          }
-        : null,
     };
   }
 

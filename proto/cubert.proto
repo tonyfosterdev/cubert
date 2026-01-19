@@ -9,11 +9,42 @@ option optimize_for = SPEED;
 // ============================================================================
 
 service BrainService {
-  // Bidirectional stream: Body sends sensors, Brain sends actions
-  rpc Connect(stream SensorData) returns (stream Action);
+  // Bidirectional stream: Body sends BodyMessage (sensors or events), Brain sends actions
+  rpc Connect(stream BodyMessage) returns (stream Action);
 
   // Health check
   rpc Ping(PingRequest) returns (PingResponse);
+}
+
+// ============================================================================
+// BODY MESSAGE WRAPPER - Body -> Brain (supports both sensor data and events)
+// ============================================================================
+
+message BodyMessage {
+  oneof payload {
+    SensorData sensor_data = 1;
+    ActionEvent action_event = 2;
+    ConnectEvent connect_event = 3;
+  }
+}
+
+message ConnectEvent {
+  fixed64 timestamp = 1;
+  SensorData initial_sensor_data = 2;
+}
+
+message ActionEvent {
+  fixed64 timestamp = 1;
+  string action_id = 2;
+  ActionResult result = 3;
+  optional string error_message = 4;
+  ActionEventType event_type = 5;
+}
+
+enum ActionEventType {
+  ACTION_EVENT_UNSPECIFIED = 0;
+  ACTION_EVENT_STARTED = 1;
+  ACTION_EVENT_COMPLETED = 2;
 }
 
 // ============================================================================
@@ -29,7 +60,6 @@ message SensorData {
   HealthData health = 5;
   BlocksData nearby_blocks = 6;
   PathStatus path_status = 7;
-  ActionFeedback action_feedback = 8;
 }
 
 message PositionData {
@@ -88,12 +118,6 @@ enum PathState {
   PATH_STATE_FOLLOWING = 3;
   PATH_STATE_REACHED = 4;
   PATH_STATE_FAILED = 5;
-}
-
-message ActionFeedback {
-  string action_id = 1;
-  ActionResult result = 2;
-  optional string error_message = 3;
 }
 
 enum ActionResult {

@@ -1,7 +1,7 @@
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import { StateMachine } from '../state-machine/StateMachine';
-import { SensorData, Action } from '../state-machine/State';
+import { SensorData, Action, ActionEvent } from '../state-machine/State';
 import { BrainConfig } from '../config';
 import path from 'path';
 
@@ -54,17 +54,47 @@ export class BrainServer {
   private handleConnect(stream: grpc.ServerDuplexStream<any, any>): void {
     console.log('Bot connected to brain');
 
-    stream.on('data', (sensorDataMsg: any) => {
+    stream.on('data', (bodyMessage: any) => {
       try {
-        const sensorData = this.deserializeSensorData(sensorDataMsg);
-        const actions = this.stateMachine.update(sensorData);
+        // Determine message type from the wrapper
+        if (bodyMessage.connectEvent) {
+          // Body connected/reconnected - reset state
+          console.log('[CONNECT] Body connected, resetting state machine');
+          this.stateMachine.resetToSafeState();
 
-        for (const action of actions) {
-          const actionMsg = this.serializeAction(action);
-          stream.write(actionMsg);
+          // Process initial sensor data if provided
+          if (bodyMessage.connectEvent.initialSensorData) {
+            const sensorData = this.deserializeSensorData(bodyMessage.connectEvent.initialSensorData);
+            const actions = this.stateMachine.update(sensorData);
+
+            for (const action of actions) {
+              const actionMsg = this.serializeAction(action);
+              stream.write(actionMsg);
+            }
+          }
+        } else if (bodyMessage.sensorData) {
+          // Regular sensor update
+          const sensorData = this.deserializeSensorData(bodyMessage.sensorData);
+          const actions = this.stateMachine.update(sensorData);
+
+          for (const action of actions) {
+            const actionMsg = this.serializeAction(action);
+            stream.write(actionMsg);
+          }
+        } else if (bodyMessage.actionEvent) {
+          // Immediate action event
+          const event = this.deserializeActionEvent(bodyMessage.actionEvent);
+          console.log(`[EVENT] ${event.eventType}: ${event.actionId} = ${event.result}`);
+
+          const actions = this.stateMachine.handleEvent(event);
+
+          for (const action of actions) {
+            const actionMsg = this.serializeAction(action);
+            stream.write(actionMsg);
+          }
         }
       } catch (err) {
-        console.error('Error processing sensor data:', err);
+        console.error('Error processing message:', err);
       }
     });
 
@@ -129,13 +159,15 @@ export class BrainServer {
         isMining: msg.pathStatus?.isMining || false,
         targetBlock: msg.pathStatus?.targetBlock || null,
       },
-      actionFeedback: msg.actionFeedback
-        ? {
-            actionId: msg.actionFeedback.actionId,
-            result: msg.actionFeedback.result,
-            errorMessage: msg.actionFeedback.errorMessage,
-          }
-        : null,
+    };
+  }
+
+  private deserializeActionEvent(msg: any): ActionEvent {
+    return {
+      actionId: msg.actionId || msg.action_id,
+      result: msg.result,
+      errorMessage: msg.errorMessage || msg.error_message,
+      eventType: msg.eventType || msg.event_type,
     };
   }
 

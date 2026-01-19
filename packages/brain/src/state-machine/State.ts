@@ -31,11 +31,6 @@ export interface SensorData {
     isMining: boolean;
     targetBlock: BlockInfo | null;
   };
-  actionFeedback: {
-    actionId: string;
-    result: string;
-    errorMessage?: string;
-  } | null;
 }
 
 export interface BlockInfo {
@@ -58,9 +53,17 @@ export interface Action {
   cancel?: { targetActionId: string };
 }
 
+export interface ActionEvent {
+  actionId: string;
+  result: string;
+  errorMessage?: string;
+  eventType: string;
+}
+
 export interface StateContext {
   sensorData: SensorData;
   memory: Map<string, any>;
+  lastEvent: ActionEvent | null;
 }
 
 export interface StateResult {
@@ -72,5 +75,6 @@ export interface State {
   name: string;
   onEnter?(context: StateContext): Action | null;
   onUpdate(context: StateContext): StateResult;
+  onEvent?(context: StateContext, event: ActionEvent): StateResult;
   onExit?(context: StateContext): void;
 }
