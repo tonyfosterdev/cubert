@@ -35,12 +35,56 @@ export class BlockSensor extends BaseSensor<BlocksData> {
   read(): BlocksData {
     const botPos = this.bot.entity.position;
 
-    return {
-      goldBlocks: this.findBlocksOfType(GOLD_ORE_BLOCKS, botPos),
-      lavaBlocks: this.findBlocksOfType(LAVA_BLOCKS, botPos),
-      chestBlocks: this.findBlocksOfType(CHEST_BLOCKS, botPos),
-      hazardBlocks: this.findBlocksOfType(HAZARD_BLOCKS, botPos),
+    // Collect all unique block IDs for a single scan
+    const allBlockNames = [
+      ...GOLD_ORE_BLOCKS,
+      ...LAVA_BLOCKS,
+      ...CHEST_BLOCKS,
+      ...HAZARD_BLOCKS,
+    ];
+    const blockIds = [...new Set(allBlockNames)]
+      .map((name) => this.mcData.blocksByName[name]?.id)
+      .filter((id): id is number => id !== undefined);
+
+    // Single findBlocks call instead of 4 separate calls
+    const positions = this.bot.findBlocks({
+      matching: blockIds,
+      maxDistance: this.config.radius,
+      count: this.config.maxCount * 4,
+    });
+
+    // Categorize results by block type
+    const result: BlocksData = {
+      goldBlocks: [],
+      lavaBlocks: [],
+      chestBlocks: [],
+      hazardBlocks: [],
     };
+
+    for (const pos of positions) {
+      const block = this.bot.blockAt(pos);
+      if (!block) continue;
+
+      const info: BlockInfo = {
+        x: pos.x,
+        y: pos.y,
+        z: pos.z,
+        blockName: block.name,
+        distance: pos.distanceTo(botPos),
+      };
+
+      if (GOLD_ORE_BLOCKS.includes(block.name)) result.goldBlocks.push(info);
+      if (LAVA_BLOCKS.includes(block.name)) result.lavaBlocks.push(info);
+      if (CHEST_BLOCKS.includes(block.name)) result.chestBlocks.push(info);
+      if (HAZARD_BLOCKS.includes(block.name)) result.hazardBlocks.push(info);
+    }
+
+    // Sort each category by distance
+    for (const arr of Object.values(result)) {
+      arr.sort((a, b) => a.distance - b.distance);
+    }
+
+    return result;
   }
 
   private findBlocksOfType(blockNames: string[], origin: Vec3): BlockInfo[] {

@@ -35,7 +35,7 @@ export const defaultConfig: BodyConfig = {
   sensors: {
     pollIntervalMs: 50, // 20 ticks per second
     sendIntervalMs: 500, // 2 updates per second to brain
-    blockSearchRadius: 32,
+    blockSearchRadius: 16,
     blockSearchCount: 10,
   },
 };
