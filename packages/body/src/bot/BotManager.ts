@@ -23,6 +23,7 @@ export class BotManager extends EventEmitter {
         username: this.config.minecraft.username,
         version: this.config.minecraft.version,
         hideErrors: false,
+        viewDistance: 'tiny', // 2 chunks - reduces CPU by loading less world data
       });
 
       this.bot.loadPlugin(pathfinder);
