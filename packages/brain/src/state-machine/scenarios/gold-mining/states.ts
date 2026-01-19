@@ -188,6 +188,7 @@ export const MiningState: State = {
       mineBlock: { x: target.x, y: target.y, z: target.z },
     });
     context.memory.set('miningActionId', action.actionId);
+    context.memory.set('minedPosition', target);
 
     console.log(`[${new Date().toISOString()}] Mining gold at (${target.x}, ${target.y}, ${target.z})`);
     return action;
@@ -195,11 +196,13 @@ export const MiningState: State = {
 
   onEvent(context: StateContext, event: ActionEvent) {
     const miningActionId = context.memory.get('miningActionId') as string;
+    const collectMoveId = context.memory.get('collectMoveId') as string;
     const idleActionId = context.memory.get('idleActionId') as string;
 
     // Handle idle completion - report gold count and transition to searching
     if (event.actionId === idleActionId) {
       context.memory.delete('idleActionId');
+      context.memory.delete('minedPosition');
       const goldCount = countGoldInInventory(context.sensorData);
       console.log(`[${new Date().toISOString()}] Inventory: ${goldCount} gold`);
       return {
@@ -210,18 +213,39 @@ export const MiningState: State = {
       };
     }
 
+    // Handle collect move completion - now idle briefly to ensure pickup
+    if (event.actionId === collectMoveId) {
+      context.memory.delete('collectMoveId');
+      console.log(`[${new Date().toISOString()}] Walked to drop location`);
+      const idleAction = createAction('ACTION_TYPE_IDLE', {
+        idle: { durationMs: 500 },
+      });
+      context.memory.set('idleActionId', idleAction.actionId);
+      return { action: idleAction, nextState: null };
+    }
+
     if (event.actionId !== miningActionId) {
       return { action: null, nextState: null };
     }
 
     console.log(`[${new Date().toISOString()}] Mining complete: ${event.result}`);
 
-    // Clean up mining state
+    // Get the mined position to walk to for item collection
+    const minedPos = context.memory.get('minedPosition') as BlockInfo;
     context.memory.delete('targetGold');
     context.memory.delete('miningActionId');
 
-    // Wait briefly to collect dropped items before searching for more gold
-    // Idle must be longer than sensor interval (1s) to get fresh inventory data
+    // Walk to the mined block position to collect dropped items
+    if (minedPos) {
+      const moveAction = createAction('ACTION_TYPE_MOVE_TO', {
+        moveTo: { x: minedPos.x, y: minedPos.y, z: minedPos.z, range: 0, sprint: false },
+      });
+      context.memory.set('collectMoveId', moveAction.actionId);
+      console.log(`[${new Date().toISOString()}] Walking to collect dropped items at (${minedPos.x}, ${minedPos.y}, ${minedPos.z})`);
+      return { action: moveAction, nextState: null };
+    }
+
+    // Fallback: just idle if no position stored
     const idleAction = createAction('ACTION_TYPE_IDLE', {
       idle: { durationMs: 1200 },
     });
