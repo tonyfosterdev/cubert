@@ -1,0 +1,180 @@
+syntax = "proto3";
+
+package cubert;
+
+option optimize_for = SPEED;
+
+// ============================================================================
+// BRAIN SERVICE - Brain is the gRPC server, Body is the client
+// ============================================================================
+
+service BrainService {
+  // Bidirectional stream: Body sends sensors, Brain sends actions
+  rpc Connect(stream SensorData) returns (stream Action);
+
+  // Health check
+  rpc Ping(PingRequest) returns (PingResponse);
+}
+
+// ============================================================================
+// SENSOR DATA - Body -> Brain
+// ============================================================================
+
+message SensorData {
+  fixed64 timestamp = 1;              // Unix timestamp in ms
+  string bot_id = 2;                  // Bot identifier
+
+  PositionData position = 3;
+  InventoryData inventory = 4;
+  HealthData health = 5;
+  BlocksData nearby_blocks = 6;
+  PathStatus path_status = 7;
+  ActionFeedback action_feedback = 8;
+}
+
+message PositionData {
+  double x = 1;
+  double y = 2;
+  double z = 3;
+  float yaw = 4;
+  float pitch = 5;
+  bool on_ground = 6;
+}
+
+message InventoryData {
+  repeated InventorySlot slots = 1;
+  int32 selected_slot = 2;
+}
+
+message InventorySlot {
+  int32 slot_index = 1;
+  string item_name = 2;               // e.g., "gold_ore", "cobblestone"
+  int32 count = 3;
+}
+
+message HealthData {
+  float health = 1;                   // 0-20
+  float food = 2;                     // 0-20
+  float saturation = 3;
+  float oxygen = 4;                   // 0-20
+}
+
+message BlocksData {
+  repeated BlockInfo gold_blocks = 1;
+  repeated BlockInfo lava_blocks = 2;
+  repeated BlockInfo chest_blocks = 3;
+  repeated BlockInfo hazard_blocks = 4;
+}
+
+message BlockInfo {
+  int32 x = 1;
+  int32 y = 2;
+  int32 z = 3;
+  string block_name = 4;
+  float distance = 5;                 // Distance from bot
+}
+
+message PathStatus {
+  PathState state = 1;
+  bool is_moving = 2;
+  bool is_mining = 3;
+  optional BlockInfo target_block = 4;
+}
+
+enum PathState {
+  PATH_STATE_UNSPECIFIED = 0;
+  PATH_STATE_IDLE = 1;
+  PATH_STATE_COMPUTING = 2;
+  PATH_STATE_FOLLOWING = 3;
+  PATH_STATE_REACHED = 4;
+  PATH_STATE_FAILED = 5;
+}
+
+message ActionFeedback {
+  string action_id = 1;
+  ActionResult result = 2;
+  optional string error_message = 3;
+}
+
+enum ActionResult {
+  ACTION_RESULT_UNSPECIFIED = 0;
+  ACTION_RESULT_SUCCESS = 1;
+  ACTION_RESULT_FAILED = 2;
+  ACTION_RESULT_IN_PROGRESS = 3;
+  ACTION_RESULT_CANCELLED = 4;
+}
+
+// ============================================================================
+// ACTIONS - Brain -> Body
+// ============================================================================
+
+message Action {
+  string action_id = 1;
+  fixed64 timestamp = 2;
+  ActionType type = 3;
+
+  oneof payload {
+    MoveToAction move_to = 10;
+    MineBlockAction mine_block = 11;
+    DepositItemsAction deposit_items = 12;
+    SpeakAction speak = 13;
+    IdleAction idle = 14;
+    CancelAction cancel = 15;
+  }
+}
+
+enum ActionType {
+  ACTION_TYPE_UNSPECIFIED = 0;
+  ACTION_TYPE_MOVE_TO = 1;
+  ACTION_TYPE_MINE_BLOCK = 2;
+  ACTION_TYPE_DEPOSIT_ITEMS = 3;
+  ACTION_TYPE_SPEAK = 4;
+  ACTION_TYPE_IDLE = 5;
+  ACTION_TYPE_CANCEL = 6;
+}
+
+message MoveToAction {
+  int32 x = 1;
+  int32 y = 2;
+  int32 z = 3;
+  int32 range = 4;                    // How close to get (default 1)
+  bool sprint = 5;
+}
+
+message MineBlockAction {
+  int32 x = 1;
+  int32 y = 2;
+  int32 z = 3;
+}
+
+message DepositItemsAction {
+  int32 chest_x = 1;
+  int32 chest_y = 2;
+  int32 chest_z = 3;
+  repeated string item_names = 4;     // Items to deposit (empty = all)
+}
+
+message SpeakAction {
+  string message = 1;
+}
+
+message IdleAction {
+  int32 duration_ms = 1;
+}
+
+message CancelAction {
+  string target_action_id = 1;
+}
+
+// ============================================================================
+// UTILITY MESSAGES
+// ============================================================================
+
+message PingRequest {
+  string bot_id = 1;
+}
+
+message PingResponse {
+  bool ready = 1;
+  string scenario = 2;
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@cubert/scenario-runner",
+  "version": "1.0.0",
+  "description": "Cubert Scenario Runner - RCON command executor",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "rcon-client": "^4.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}

@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Generated files
+packages/*/src/grpc/generated/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes
+minecraft-data/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/

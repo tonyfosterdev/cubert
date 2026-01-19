@@ -1,0 +1,93 @@
+services:
+  minecraft:
+    image: itzg/minecraft-server:latest
+    environment:
+      EULA: "TRUE"
+      TYPE: "VANILLA"
+      VERSION: "1.20.4"
+      ONLINE_MODE: "FALSE"
+      ENABLE_RCON: "TRUE"
+      RCON_PASSWORD: "minecraft"
+      MEMORY: "2G"
+      DIFFICULTY: "normal"
+      SPAWN_PROTECTION: "0"
+      ENABLE_AUTOPAUSE: "FALSE"
+    ports:
+      - "25565:25565"
+      - "25575:25575"
+    volumes:
+      - minecraft-data:/data
+    healthcheck:
+      test: mc-monitor status --host localhost --port 25565
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+
+  brain:
+    build:
+      context: ./packages/brain
+      dockerfile: Dockerfile.dev
+    environment:
+      BRAIN_PORT: "5000"
+      SCENARIO: "${SCENARIO:-gold-mining}"
+      NODE_ENV: "development"
+      PROTO_PATH: "/app/proto/cubert.proto"
+    ports:
+      - "5000:5000"
+      - "9230:9230"
+    volumes:
+      - ./packages/brain/src:/app/src
+      - ./proto:/app/proto
+      - brain-node-modules:/app/node_modules
+    command: npx nodemon -L --exec "npx tsx" src/index.ts
+    depends_on:
+      minecraft:
+        condition: service_healthy
+
+  body:
+    build:
+      context: ./packages/body
+      dockerfile: Dockerfile.dev
+    environment:
+      MC_HOST: "minecraft"
+      MC_PORT: "25565"
+      MC_VERSION: "1.20.4"
+      BOT_USERNAME: "Cubert"
+      BRAIN_HOST: "brain"
+      BRAIN_PORT: "5000"
+      NODE_ENV: "development"
+      PROTO_PATH: "/app/proto/cubert.proto"
+    ports:
+      - "9229:9229"
+    volumes:
+      - ./packages/body/src:/app/src
+      - ./proto:/app/proto
+      - body-node-modules:/app/node_modules
+    command: npx nodemon -L --exec "npx tsx" src/index.ts
+    depends_on:
+      brain:
+        condition: service_started
+      minecraft:
+        condition: service_healthy
+
+  scenario-init:
+    build:
+      context: ./tools/scenario-runner
+    environment:
+      MC_HOST: "minecraft"
+      RCON_PORT: "25575"
+      RCON_PASSWORD: "minecraft"
+      BOT_USERNAME: "Cubert"
+      SCENARIO: "${SCENARIO:-gold-mining}"
+    volumes:
+      - ./scenarios:/scenarios:ro
+    depends_on:
+      body:
+        condition: service_started
+    restart: "no"
+
+volumes:
+  minecraft-data:
+  brain-node-modules:
+  body-node-modules:
