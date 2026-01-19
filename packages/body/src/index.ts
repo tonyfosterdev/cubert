@@ -4,9 +4,12 @@ import { BotManager } from './bot/BotManager';
 import { SensorAggregator } from './sensors';
 import { ActuatorRegistry } from './actuators';
 import { BrainClient } from './grpc/client';
+import { startMetricsServer, botConnected, sensorGathersTotal, goldInventory, actionsTotal } from './metrics';
 
 async function main() {
   console.log('Cubert Body starting...');
+
+  startMetricsServer(9091);
 
   const config = defaultConfig;
   const botManager = new BotManager(config);
@@ -15,6 +18,7 @@ async function main() {
   let sensors: SensorAggregator | null = null;
   let actuators: ActuatorRegistry | null = null;
   let lastGatherTime = 0;
+  const actionTypes = new Map<string, string>();
 
   /**
    * Gathers and sends sensor data to the brain with throttling protection.
@@ -39,6 +43,11 @@ async function main() {
 
     // This is the expensive operation - BlockSensor calls bot.findBlocks() multiple times
     const data = sensors.collect();
+    sensorGathersTotal.inc();
+
+    // Update gold inventory metric
+    const goldSlot = data.inventory.slots.find(s => s.itemName === 'raw_gold');
+    goldInventory.set(goldSlot?.count ?? 0);
 
     if (asConnectEvent) {
       brainClient.sendConnectEvent(data);
@@ -60,6 +69,12 @@ async function main() {
     // Handle action completion
     actuators.on('actionComplete', (result) => {
       console.log(`[EVENT] Action ${result.actionId} completed: ${result.success ? 'SUCCESS' : 'FAILED'}`);
+
+      // Track action metrics
+      const actionType = actionTypes.get(result.actionId) ?? 'unknown';
+      actionsTotal.inc({ type: actionType, result: result.success ? 'success' : 'failed' });
+      actionTypes.delete(result.actionId);
+
       // Send fresh sensor data immediately so brain has current inventory (forced - CPU cost acceptable)
       gatherAndSendSensors(true);
       brainClient.sendActionEvent({
@@ -101,6 +116,7 @@ async function main() {
   // Listen for bot ready events (initial + reconnects)
   botManager.on('botReady', (bot: Bot) => {
     console.log('[RECONNECT] Bot ready, setting up listeners');
+    botConnected.set(1);
     setupBotListeners(bot);
   });
 
@@ -127,6 +143,7 @@ async function main() {
   // Handle incoming actions from brain
   brainClient.on('action', async (action) => {
     try {
+      actionTypes.set(action.actionId, action.type);
       await actuators?.execute(action);
     } catch (err) {
       console.error('Failed to execute action:', err);
@@ -136,6 +153,7 @@ async function main() {
   // Graceful shutdown
   const shutdown = () => {
     console.log('Shutting down...');
+    botConnected.set(0);
     brainClient.disconnect();
     botManager.disconnect();
     process.exit(0);

@@ -1,6 +1,7 @@
 import { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { BaseActuator } from './BaseActuator';
+import { goldMinedTotal } from '../metrics';
 
 export interface MineBlockPayload {
   x: number;
@@ -38,6 +39,12 @@ export class MiningActuator extends BaseActuator {
       console.log(`[MINE] Digging ${block.name}...`);
       await this.bot.dig(block);
       console.log(`[MINE] Successfully mined ${block.name}`);
+
+      // Track gold ore mined
+      if (block.name.includes('gold_ore')) {
+        goldMinedTotal.inc();
+      }
+
       this.complete(actionId, true);
     } catch (err: any) {
       console.log(`[MINE] Failed: ${err.message}`);

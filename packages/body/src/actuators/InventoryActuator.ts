@@ -1,6 +1,7 @@
 import { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { BaseActuator } from './BaseActuator';
+import { goldChest } from '../metrics';
 
 export interface DepositItemsPayload {
   chestX: number;
@@ -46,6 +47,13 @@ export class InventoryActuator extends BaseActuator {
           console.warn(`Could not deposit ${item.name}:`, err);
         }
       }
+
+      // Count gold in chest and update metric
+      const chestGold = chest.containerItems()
+        .filter(item => item.name === 'raw_gold')
+        .reduce((sum, item) => sum + item.count, 0);
+      goldChest.set(chestGold);
+      console.log(`[DEPOSIT] Chest now contains ${chestGold} raw gold`);
 
       chest.close();
       this.complete(actionId, true);
