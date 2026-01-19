@@ -20,6 +20,11 @@ export class InventorySensor extends BaseSensor<InventoryData> {
   read(): InventoryData {
     const items = this.bot.inventory.items();
 
+    // Debug: log inventory contents
+    if (items.length > 0) {
+      console.log(`[INVENTORY] ${items.map(i => `${i.count}x ${i.name}`).join(', ')}`);
+    }
+
     return {
       slots: items.map((item) => ({
         slotIndex: item.slot,

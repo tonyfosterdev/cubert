@@ -23,6 +23,12 @@ function countGoldInInventory(sensorData: SensorData): number {
     .reduce((sum, slot) => sum + slot.count, 0);
 }
 
+function hasPickaxe(sensorData: SensorData): boolean {
+  const slots = sensorData.inventory?.slots || [];
+  const pickaxes = ['wooden_pickaxe', 'stone_pickaxe', 'iron_pickaxe', 'golden_pickaxe', 'diamond_pickaxe', 'netherite_pickaxe'];
+  return slots.some((slot) => pickaxes.includes(slot.itemName));
+}
+
 // ============================================================================
 // IDLE STATE
 // ============================================================================
@@ -62,7 +68,7 @@ export const SearchingGoldState: State = {
 
     // Check if inventory is getting full
     const goldCount = countGoldInInventory(sensorData);
-    if (goldCount >= 32) {
+    if (goldCount >= 5) {
       return { action: null, nextState: 'SEARCHING_CHEST' };
     }
 
@@ -170,6 +176,14 @@ export const MiningState: State = {
       return null;
     }
 
+    // Check for pickaxe
+    if (!hasPickaxe(context.sensorData)) {
+      console.log(`[${new Date().toISOString()}] WARNING: No pickaxe in inventory!`);
+      return createAction('ACTION_TYPE_SPEAK', {
+        speak: { message: 'I need a pickaxe to mine!' },
+      });
+    }
+
     const action = createAction('ACTION_TYPE_MINE_BLOCK', {
       mineBlock: { x: target.x, y: target.y, z: target.z },
     });
@@ -181,6 +195,20 @@ export const MiningState: State = {
 
   onEvent(context: StateContext, event: ActionEvent) {
     const miningActionId = context.memory.get('miningActionId') as string;
+    const idleActionId = context.memory.get('idleActionId') as string;
+
+    // Handle idle completion - report gold count and transition to searching
+    if (event.actionId === idleActionId) {
+      context.memory.delete('idleActionId');
+      const goldCount = countGoldInInventory(context.sensorData);
+      console.log(`[${new Date().toISOString()}] Inventory: ${goldCount} gold`);
+      return {
+        action: createAction('ACTION_TYPE_SPEAK', {
+          speak: { message: `I have ${goldCount} gold now!` },
+        }),
+        nextState: 'SEARCHING_GOLD',
+      };
+    }
 
     if (event.actionId !== miningActionId) {
       return { action: null, nextState: null };
@@ -188,10 +216,18 @@ export const MiningState: State = {
 
     console.log(`[${new Date().toISOString()}] Mining complete: ${event.result}`);
 
-    // Clean up and search for more gold
+    // Clean up mining state
     context.memory.delete('targetGold');
     context.memory.delete('miningActionId');
-    return { action: null, nextState: 'SEARCHING_GOLD' };
+
+    // Wait briefly to collect dropped items before searching for more gold
+    // Idle must be longer than sensor interval (1s) to get fresh inventory data
+    const idleAction = createAction('ACTION_TYPE_IDLE', {
+      idle: { durationMs: 1200 },
+    });
+    context.memory.set('idleActionId', idleAction.actionId);
+    console.log(`[${new Date().toISOString()}] Waiting to collect dropped items`);
+    return { action: idleAction, nextState: null };
   },
 
   onUpdate(context: StateContext) {
@@ -208,8 +244,10 @@ export const SearchingChestState: State = {
   name: 'SEARCHING_CHEST',
 
   onEnter(context: StateContext): Action | null {
+    const goldCount = countGoldInInventory(context.sensorData);
+    console.log(`[${new Date().toISOString()}] Have ${goldCount} gold, looking for chest to deposit`);
     return createAction('ACTION_TYPE_SPEAK', {
-      speak: { message: 'Inventory full! Looking for chest...' },
+      speak: { message: `I have ${goldCount} gold! Looking for chest...` },
     });
   },
 

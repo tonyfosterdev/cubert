@@ -71,8 +71,15 @@ export class ActuatorRegistry extends EventEmitter {
         break;
 
       case 'ACTION_TYPE_IDLE':
-        // Do nothing, just acknowledge
-        console.log(`Idling for ${action.idle?.durationMs || 0}ms`);
+        if (action.idle) {
+          console.log(`Idling for ${action.idle.durationMs}ms`);
+          setTimeout(() => {
+            this.emit('actionComplete', {
+              actionId: action.actionId,
+              success: true,
+            });
+          }, action.idle.durationMs);
+        }
         break;
 
       case 'ACTION_TYPE_CANCEL':

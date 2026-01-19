@@ -27,6 +27,8 @@ async function main() {
     // Handle action completion
     actuators.on('actionComplete', (result) => {
       console.log(`[EVENT] Action ${result.actionId} completed: ${result.success ? 'SUCCESS' : 'FAILED'}`);
+      // Send fresh sensor data immediately so brain has current inventory
+      brainClient.sendSensorData(sensors!.collect());
       brainClient.sendActionEvent({
         actionId: result.actionId,
         result: result.success ? 'ACTION_RESULT_SUCCESS' : 'ACTION_RESULT_FAILED',
