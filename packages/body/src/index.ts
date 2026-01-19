@@ -14,7 +14,40 @@ async function main() {
 
   let sensors: SensorAggregator | null = null;
   let actuators: ActuatorRegistry | null = null;
-  let lastSendTime = 0;
+  let lastGatherTime = 0;
+
+  /**
+   * Gathers and sends sensor data to the brain with throttling protection.
+   *
+   * CPU OPTIMIZATION: The expensive operation is sensors.collect(), specifically
+   * BlockSensor.read() which calls bot.findBlocks() multiple times. Throttling
+   * skips the entire gather operation when data was recently collected.
+   *
+   * @param force - If true, always gather (used for actionComplete where inventory is critical)
+   * @param asConnectEvent - If true, send as ConnectEvent instead of SensorData
+   */
+  function gatherAndSendSensors(force: boolean = false, asConnectEvent: boolean = false): void {
+    if (!sensors || !brainClient.isConnected()) return;
+
+    const now = Date.now();
+    const timeSinceLastGather = now - lastGatherTime;
+
+    // Skip expensive sensors.collect() if data was recently gathered (unless forced)
+    if (!force && timeSinceLastGather < config.sensors.sendIntervalMs) {
+      return;
+    }
+
+    // This is the expensive operation - BlockSensor calls bot.findBlocks() multiple times
+    const data = sensors.collect();
+
+    if (asConnectEvent) {
+      brainClient.sendConnectEvent(data);
+    } else {
+      brainClient.sendSensorData(data);
+    }
+
+    lastGatherTime = now;
+  }
 
   // Setup bot listeners - called on initial connect and reconnect
   function setupBotListeners(bot: Bot) {
@@ -27,8 +60,8 @@ async function main() {
     // Handle action completion
     actuators.on('actionComplete', (result) => {
       console.log(`[EVENT] Action ${result.actionId} completed: ${result.success ? 'SUCCESS' : 'FAILED'}`);
-      // Send fresh sensor data immediately so brain has current inventory
-      brainClient.sendSensorData(sensors!.collect());
+      // Send fresh sensor data immediately so brain has current inventory (forced - CPU cost acceptable)
+      gatherAndSendSensors(true);
       brainClient.sendActionEvent({
         actionId: result.actionId,
         result: result.success ? 'ACTION_RESULT_SUCCESS' : 'ACTION_RESULT_FAILED',
@@ -42,30 +75,26 @@ async function main() {
       if (brainClient.isConnected()) {
         console.log('[SPAWN] Bot respawned, sending connect event');
         actuators?.cancelAll();
-        brainClient.sendConnectEvent(sensors!.collect());
+        // Throttled - skip expensive gather if data was recently collected
+        gatherAndSendSensors(false, true);
       }
     });
 
-    // Sensor polling loop
+    // Sensor polling loop - throttling handled by gatherAndSendSensors
     bot.on('physicsTick', () => {
-      const now = Date.now();
-      if (now - lastSendTime >= config.sensors.sendIntervalMs) {
-        try {
-          if (sensors && brainClient.isConnected()) {
-            brainClient.sendSensorData(sensors.collect());
-          }
-        } catch (err) {
-          console.error('Failed to collect/send sensor data:', err);
-        }
-        lastSendTime = now;
+      try {
+        gatherAndSendSensors();
+      } catch (err) {
+        console.error('Failed to collect/send sensor data:', err);
       }
     });
 
     // Send connect event if brain is already connected
-    if (brainClient.isConnected() && sensors) {
+    if (brainClient.isConnected()) {
       console.log('[SETUP] Brain already connected, sending connect event');
       actuators.cancelAll();
-      brainClient.sendConnectEvent(sensors.collect());
+      // Forced - brain needs initial state on connection
+      gatherAndSendSensors(true, true);
     }
   }
 
@@ -83,9 +112,8 @@ async function main() {
   brainClient.on('connected', () => {
     console.log('[CONNECT] Brain connected, sending connect event');
     actuators?.cancelAll();
-    if (sensors) {
-      brainClient.sendConnectEvent(sensors.collect());
-    }
+    // Throttled - skip expensive gather if data was recently collected
+    gatherAndSendSensors(false, true);
   });
 
   // Connect to brain

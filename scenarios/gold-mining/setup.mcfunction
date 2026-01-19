@@ -17,5 +17,8 @@ setblock -8 64 0 chest
 time set day
 weather clear
 
+# Give bot a pickaxe
+give Cubert iron_pickaxe 1
+
 # Announce setup complete
 say Gold Mining scenario ready!
