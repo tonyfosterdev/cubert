@@ -34,8 +34,8 @@ export const defaultConfig: BodyConfig = {
   },
   sensors: {
     pollIntervalMs: 50, // 20 ticks per second
-    sendIntervalMs: 1000, // 1 update per second (balance between CPU and inventory accuracy)
-    blockSearchRadius: 16,
-    blockSearchCount: 10,
+    sendIntervalMs: 2000, // 2 seconds between sensor updates (reduces CPU)
+    blockSearchRadius: 12, // Reduced from 16 to lower CPU
+    blockSearchCount: 5,
   },
 };
