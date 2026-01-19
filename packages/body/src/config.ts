@@ -34,7 +34,7 @@ export const defaultConfig: BodyConfig = {
   },
   sensors: {
     pollIntervalMs: 50, // 20 ticks per second
-    sendIntervalMs: 500, // 2 updates per second to brain
+    sendIntervalMs: 2000, // 1 update every 2 seconds to brain (gold spawns every 15s)
     blockSearchRadius: 16,
     blockSearchCount: 10,
   },

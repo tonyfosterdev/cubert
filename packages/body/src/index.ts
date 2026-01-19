@@ -49,7 +49,7 @@ async function main() {
       const now = Date.now();
       if (now - lastSendTime >= config.sensors.sendIntervalMs) {
         try {
-          if (sensors) {
+          if (sensors && brainClient.isConnected()) {
             brainClient.sendSensorData(sensors.collect());
           }
         } catch (err) {

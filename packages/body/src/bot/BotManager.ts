@@ -30,8 +30,36 @@ export class BotManager extends EventEmitter {
       this.bot.once('spawn', () => {
         console.log(`Bot ${this.config.minecraft.username} spawned!`);
         this.setupPathfinder();
-        this.emit('botReady', this.bot);
-        resolve(this.bot!);
+
+        // Wait for chunks AND physics before signaling ready
+        const checkReady = () => {
+          // Check if blocks around the bot are loaded by sampling nearby positions
+          const pos = this.bot!.entity.position;
+          const offsets = [[0, 0], [16, 0], [-16, 0], [0, 16], [0, -16]];
+          const chunksLoaded = offsets.every(([dx, dz]) => {
+            const block = this.bot!.blockAt(pos.offset(dx, -1, dz));
+            return block !== null;
+          });
+
+          if (!chunksLoaded) {
+            setTimeout(checkReady, 100);
+            return;
+          }
+
+          // Then wait for physics to process the chunks
+          let physicsTicks = 0;
+          const onPhysics = () => {
+            if (++physicsTicks >= 5) { // ~250ms of physics
+              this.bot!.off('physicsTick', onPhysics);
+              console.log('Bot ready (chunks loaded, physics initialized)');
+              this.emit('botReady', this.bot);
+              resolve(this.bot!);
+            }
+          };
+          this.bot!.on('physicsTick', onPhysics);
+        };
+
+        checkReady();
       });
 
       this.bot.once('error', (err) => {
