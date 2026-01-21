@@ -37,16 +37,30 @@ export class MovementActuator extends BaseActuator {
 
     const goal = new goals.GoalNear(x, y, z, range);
 
-    try {
-      await (this.bot as any).pathfinder.goto(goal);
-      console.log(`[MOVE] Reached goal (${x}, ${y}, ${z})`);
-      // Ensure we complete the action (goal_reached event might have already done this)
-      if (this.currentActionId === actionId) {
-        this.complete(actionId, true);
+    // Retry logic for mineflayer-pathfinder flakiness.
+    // The pathfinder intermittently fails with "Path was stopped before it could
+    // be completed" even for simple straight-line paths. This appears to be a
+    // timing issue where chunk data or physics haven't fully stabilized.
+    // Retrying with delays between attempts resolves this reliably.
+    // See: https://stackoverflow.com/questions/79084385/mineflayer-pathfinder-the-bot-doesnt-want-to-go
+    const maxAttempts = 3;
+    const delayMs = 500;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        await (this.bot as any).pathfinder.goto(goal);
+        console.log(`[MOVE] Reached goal (${x}, ${y}, ${z})`);
+        if (this.currentActionId === actionId) {
+          this.complete(actionId, true);
+        }
+        return;
+      } catch (err: any) {
+        console.log(`[MOVE] Attempt ${attempt}/${maxAttempts} failed: ${err.message}`);
+        if (attempt === maxAttempts) {
+          this.complete(actionId, false, err.message);
+        }
       }
-    } catch (err: any) {
-      console.log(`[MOVE] Failed: ${err.message}`);
-      this.complete(actionId, false, err.message);
     }
   }
 

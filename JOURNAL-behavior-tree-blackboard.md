@@ -344,3 +344,83 @@ scenarios/semi-autonomous/setup.mcfunction           # pickaxe in chest
 3. **Mineflayer chest interaction**: `openContainer()` can hang if bot is too far. Always validate distance before attempting chest operations.
 
 4. **LLM tool extraction**: Claude reliably extracts specific item names from natural language and maps them to tool parameters.
+
+---
+
+## Session 4 - 2026-01-21 (Pathfinder Reliability Fix)
+
+### Problem
+
+Bot movement commands frequently failed with "Path was stopped before it could be completed" even for simple straight-line paths on flat terrain.
+
+### Investigation
+
+#### Symptoms Observed
+- "move to the chest" command would fail intermittently
+- Bot at (0.5, 64, 0.5), chest at (-8, 64, 0) - only ~8.5 blocks away on flat stone floor
+- First attempt often failed, but immediate retry succeeded
+- No obstacles in path, pathfinder just giving up
+
+#### Root Cause
+mineflayer-pathfinder has a known race condition where it fails during path computation if chunk data or physics haven't fully stabilized. This manifests as intermittent "Path was stopped" errors even when the path is trivially simple.
+
+Reference: https://stackoverflow.com/questions/79084385/mineflayer-pathfinder-the-bot-doesnt-want-to-go
+
+#### Secondary Issue Found
+Chest detection limited to 12-block radius (`blockSearchRadius: 12` in body config). When bot moves away from chest, it "forgets" where the chest is and says "I don't see any chests nearby."
+
+### Solution
+
+Added retry logic with delays to `MovementActuator.ts`:
+
+```typescript
+const maxAttempts = 3;
+const delayMs = 500;
+
+for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+  try {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    await (this.bot as any).pathfinder.goto(goal);
+    // success handling...
+    return;
+  } catch (err: any) {
+    console.log(`[MOVE] Attempt ${attempt}/${maxAttempts} failed: ${err.message}`);
+    if (attempt === maxAttempts) {
+      this.complete(actionId, false, err.message);
+    }
+  }
+}
+```
+
+### Test Results
+
+| Test | Start Position | Distance | Result |
+|------|---------------|----------|--------|
+| 1 | (0.5, 64, 0.5) | ~8.5 blocks | Attempt 1 failed → retry succeeded ✅ |
+| 2 | (0.5, 64, 0.5) | ~8.5 blocks | First attempt succeeded ✅ |
+| 3 | (-5.3, 64, 0.5) | ~2.7 blocks | First attempt succeeded ✅ |
+| 4 | (5.5, 64, 5.5) | ~15 blocks | Chest not detected (outside 12-block range) |
+| 5 | (2.5, 64, 0.5) | ~10.5 blocks | Attempt 1 failed → retry succeeded ✅ |
+
+The retry logic handles pathfinder flakiness reliably. Once the pathfinder "warms up", subsequent moves tend to succeed on first attempt.
+
+### Files Changed
+
+```
+packages/body/src/actuators/MovementActuator.ts  # Added retry logic with delays
+```
+
+### Learnings
+
+1. **Pathfinder needs warm-up time**: The 500ms delay before each attempt gives chunk data and physics time to stabilize.
+
+2. **Retry is more robust than single delay**: A single 1000ms delay wasn't enough. Retry logic (up to 3 attempts) handles the intermittent nature of the bug.
+
+3. **Sensor range affects target resolution**: The 12-block `blockSearchRadius` limits what targets can be resolved. Bot can only move to things it can currently "see."
+
+### Known Remaining Issues
+
+1. **Chest detection range**: Bot can't move to chest if >12 blocks away. Would need to either:
+   - Increase `blockSearchRadius` (costs CPU)
+   - Store known chest locations in WorldModel
+   - Have bot remember last seen chest position
