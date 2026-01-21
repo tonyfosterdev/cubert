@@ -4,6 +4,7 @@ import { BotManager } from './bot/BotManager';
 import { SensorAggregator } from './sensors';
 import { ActuatorRegistry } from './actuators';
 import { BrainClient } from './grpc/client';
+import { ChatListener } from './chat';
 import { startMetricsServer, botConnected, sensorGathersTotal, goldInventory, actionsTotal } from './metrics';
 
 async function main() {
@@ -17,6 +18,7 @@ async function main() {
 
   let sensors: SensorAggregator | null = null;
   let actuators: ActuatorRegistry | null = null;
+  let chatListener: ChatListener | null = null;
   let lastGatherTime = 0;
   const actionTypes = new Map<string, string>();
 
@@ -65,6 +67,11 @@ async function main() {
     // Reinitialize sensors and actuators with new bot
     sensors = new SensorAggregator(bot, config);
     actuators = new ActuatorRegistry(bot);
+
+    // Initialize chat listener to forward chat messages to brain
+    chatListener = new ChatListener(bot, (msg) => {
+      brainClient.sendChatMessage(msg);
+    });
 
     // Handle action completion
     actuators.on('actionComplete', (result) => {

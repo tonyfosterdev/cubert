@@ -11,6 +11,12 @@ export interface ActionEvent {
   errorMessage?: string;
   eventType: string;
 }
+
+export interface ChatMessage {
+  timestamp: number;
+  sender: string;
+  message: string;
+}
 import path from 'path';
 
 const PROTO_PATH = process.env.PROTO_PATH || path.resolve(__dirname, '../../../../proto/cubert.proto');
@@ -144,6 +150,27 @@ export class BrainClient extends EventEmitter {
       console.log('[CONNECT] Sent connect event to brain');
     } catch (err) {
       console.error('Failed to send connect event:', err);
+    }
+  }
+
+  sendChatMessage(chat: ChatMessage): void {
+    if (!this.stream || !this.connected) {
+      return;
+    }
+
+    const message = {
+      chatMessage: {
+        timestamp: chat.timestamp.toString(),
+        sender: chat.sender,
+        message: chat.message,
+      },
+    };
+
+    try {
+      this.stream.write(message);
+      console.log(`[CHAT] Sent chat message to brain: "${chat.message}"`);
+    } catch (err) {
+      console.error('Failed to send chat message:', err);
     }
   }
 

@@ -25,7 +25,14 @@ message BodyMessage {
     SensorData sensor_data = 1;
     ActionEvent action_event = 2;
     ConnectEvent connect_event = 3;
+    ChatMessage chat_message = 4;
   }
+}
+
+message ChatMessage {
+  fixed64 timestamp = 1;
+  string sender = 2;
+  string message = 3;
 }
 
 message ConnectEvent {
