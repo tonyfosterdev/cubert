@@ -163,11 +163,15 @@ Nearby chests: ${chests.length > 0 ? chests.map(c => `(${c.x},${c.y},${c.z})`).j
 Nearby players: ${players.length > 0 ? players.map(p => `${p.username} at (${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)})`).join(', ') : 'none'}
 
 ## Instructions
-- Respond to greetings with a friendly speak command
-- For movement requests (like "come here", "come to me"), use move_to with target "player"
-- For mining requests, use move_to then mine_block
 - Always acknowledge commands with a brief speak first
 - Be concise in chat messages (Minecraft has character limits)
+- For greetings, just respond with speak
+
+## Command Patterns
+- "come here" / "come to me" → speak + move_to(player)
+- "mine gold" / "mine that gold" → speak + move_to(gold) + mine_block(nearest_gold)
+- "deposit" / "put items in chest" → speak + move_to(chest) + deposit_items
+- "stop" → speak + stop(interrupt: true)
 - If unsure what the player wants, ask for clarification via speak`;
   }
 
