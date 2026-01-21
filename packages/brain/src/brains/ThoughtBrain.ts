@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { SensorData, Action, ActionEvent } from '../types';
 import { Thought, ChatMessage, createChatThought } from '../thought';
 import { LLMInterpreter, ToolCall, LLMConfig, ToolResolver } from '../llm';
+import { CommandQueue, Command } from '../command';
 
 export interface ThoughtBrainConfig {
   llm: LLMConfig;
@@ -17,10 +18,9 @@ export interface ThoughtBrainConfig {
 export class ThoughtBrain {
   private interpreter: LLMInterpreter;
   private sensors: SensorData = {} as SensorData;
-  private currentAction: { actionId: string; type: string } | null = null;
+  private commandQueue: CommandQueue = new CommandQueue();
   private thoughtQueue: Thought[] = [];
   private isProcessing = false;
-  private pendingActions: Action[] = [];
 
   constructor(config: ThoughtBrainConfig) {
     this.interpreter = new LLMInterpreter(config.llm);
@@ -29,19 +29,26 @@ export class ThoughtBrain {
   async onConnect(initialData: SensorData): Promise<Action[]> {
     console.log('[ThoughtBrain] Connected');
     this.sensors = initialData;
-    this.currentAction = null;
+    this.commandQueue.clearAll();
     this.thoughtQueue = [];
-    this.pendingActions = [];
+    this.isProcessing = false;
 
     // Say hello on connect
-    return [this.createSpeakAction('Ready to help!')];
+    const action = this.createSpeakAction('Ready to help!');
+    return [action];
   }
 
   async onSensorUpdate(data: SensorData): Promise<Action[]> {
     this.sensors = data;
 
+    // Try to execute next command if nothing is in progress
+    const nextAction = this.tryExecuteNextCommand();
+    if (nextAction) {
+      return [nextAction];
+    }
+
     // Process any queued thoughts if not currently processing
-    if (!this.isProcessing && this.thoughtQueue.length > 0) {
+    if (!this.isProcessing && this.thoughtQueue.length > 0 && !this.commandQueue.hasInProgress()) {
       return this.processNextThought();
     }
 
@@ -51,16 +58,29 @@ export class ThoughtBrain {
   async onActionComplete(event: ActionEvent): Promise<Action[]> {
     console.log(`[ThoughtBrain] Action complete: ${event.actionId} -> ${event.result}`);
 
-    if (this.currentAction && event.actionId === this.currentAction.actionId) {
-      this.currentAction = null;
+    // Mark command as complete
+    this.commandQueue.complete(event.actionId);
+
+    // Try to execute next command
+    const nextAction = this.tryExecuteNextCommand();
+    if (nextAction) {
+      return [nextAction];
     }
 
     // Process next thought if queue is not empty
-    if (!this.isProcessing && this.thoughtQueue.length > 0) {
+    if (!this.isProcessing && this.thoughtQueue.length > 0 && !this.commandQueue.hasInProgress()) {
       return this.processNextThought();
     }
 
     return [];
+  }
+
+  private tryExecuteNextCommand(): Action | null {
+    const command = this.commandQueue.dequeue();
+    if (command) {
+      return command.action;
+    }
+    return null;
   }
 
   async onChatMessage(chat: ChatMessage): Promise<Action[]> {
@@ -87,10 +107,18 @@ export class ThoughtBrain {
 
     try {
       const toolCalls = await this.interpreter.interpret(thought, this.sensors);
-      const actions = this.convertToolCallsToActions(toolCalls);
+      const commands = this.convertToolCallsToCommands(toolCalls);
+
+      // Queue all commands
+      if (commands.length > 0) {
+        this.commandQueue.enqueue(...commands);
+      }
 
       this.isProcessing = false;
-      return actions;
+
+      // Execute first command immediately
+      const firstAction = this.tryExecuteNextCommand();
+      return firstAction ? [firstAction] : [];
     } catch (error) {
       console.error('[ThoughtBrain] Error processing thought:', error);
       this.isProcessing = false;
@@ -98,17 +126,47 @@ export class ThoughtBrain {
     }
   }
 
-  private convertToolCallsToActions(toolCalls: ToolCall[]): Action[] {
-    const actions: Action[] = [];
+  private convertToolCallsToCommands(toolCalls: ToolCall[]): Command[] {
+    const commands: Command[] = [];
 
     for (const call of toolCalls) {
-      const action = this.toolCallToAction(call);
-      if (action) {
-        actions.push(action);
+      const command = this.toolCallToCommand(call);
+      if (command) {
+        commands.push(command);
       }
     }
 
-    return actions;
+    return commands;
+  }
+
+  private toolCallToCommand(call: ToolCall): Command | null {
+    const action = this.toolCallToAction(call);
+    if (!action) return null;
+
+    return {
+      id: action.actionId,
+      action,
+      description: this.getCommandDescription(call),
+    };
+  }
+
+  private getCommandDescription(call: ToolCall): string {
+    switch (call.tool) {
+      case 'speak':
+        return `Say: "${call.args.message}"`;
+      case 'move_to':
+        return `Move to: ${call.args.target}`;
+      case 'mine_block':
+        return `Mine: ${call.args.target}`;
+      case 'deposit_items':
+        return `Deposit items`;
+      case 'stop':
+        return `Stop`;
+      case 'wait':
+        return `Wait ${call.args.duration_ms}ms`;
+      default:
+        return `Unknown: ${call.tool}`;
+    }
   }
 
   private toolCallToAction(call: ToolCall): Action | null {
@@ -139,14 +197,12 @@ export class ThoughtBrain {
   }
 
   private createSpeakAction(message: string): Action {
-    const action: Action = {
+    return {
       actionId: uuidv4(),
       timestamp: Date.now().toString(),
       type: 'ACTION_TYPE_SPEAK',
       speak: { message },
     };
-    this.currentAction = { actionId: action.actionId, type: action.type };
-    return action;
   }
 
   private createMoveToAction(target: string): Action | null {
@@ -156,7 +212,7 @@ export class ThoughtBrain {
       return this.createSpeakAction(`I can't find ${target}.`);
     }
 
-    const action: Action = {
+    return {
       actionId: uuidv4(),
       timestamp: Date.now().toString(),
       type: 'ACTION_TYPE_MOVE_TO',
@@ -168,8 +224,6 @@ export class ThoughtBrain {
         sprint: false,
       },
     };
-    this.currentAction = { actionId: action.actionId, type: action.type };
-    return action;
   }
 
   private createMineBlockAction(target: string): Action | null {
@@ -179,7 +233,7 @@ export class ThoughtBrain {
       return this.createSpeakAction(`I can't find any ${target} to mine.`);
     }
 
-    const action: Action = {
+    return {
       actionId: uuidv4(),
       timestamp: Date.now().toString(),
       type: 'ACTION_TYPE_MINE_BLOCK',
@@ -189,8 +243,6 @@ export class ThoughtBrain {
         z: position.z,
       },
     };
-    this.currentAction = { actionId: action.actionId, type: action.type };
-    return action;
   }
 
   private createDepositAction(items?: string[]): Action | null {
@@ -199,7 +251,7 @@ export class ThoughtBrain {
       return this.createSpeakAction("I don't see any chests nearby.");
     }
 
-    const action: Action = {
+    return {
       actionId: uuidv4(),
       timestamp: Date.now().toString(),
       type: 'ACTION_TYPE_DEPOSIT_ITEMS',
@@ -210,19 +262,15 @@ export class ThoughtBrain {
         itemNames: items || [],
       },
     };
-    this.currentAction = { actionId: action.actionId, type: action.type };
-    return action;
   }
 
   private createIdleAction(durationMs: number): Action {
-    const action: Action = {
+    return {
       actionId: uuidv4(),
       timestamp: Date.now().toString(),
       type: 'ACTION_TYPE_IDLE',
       idle: { durationMs },
     };
-    this.currentAction = { actionId: action.actionId, type: action.type };
-    return action;
   }
 
   private resolveTarget(target: string): { x: number; y: number; z: number; name?: string } | null {
@@ -255,10 +303,16 @@ export class ThoughtBrain {
 
   reset(): void {
     this.sensors = {} as SensorData;
-    this.currentAction = null;
+    this.commandQueue.clearAll();
     this.thoughtQueue = [];
     this.isProcessing = false;
-    this.pendingActions = [];
     console.log('[ThoughtBrain] Reset');
+  }
+
+  /**
+   * Get the current command queue for inspection.
+   */
+  getCommandQueue(): CommandQueue {
+    return this.commandQueue;
   }
 }
