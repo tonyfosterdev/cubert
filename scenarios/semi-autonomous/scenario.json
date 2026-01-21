@@ -1,0 +1,23 @@
+{
+  "name": "semi-autonomous",
+  "description": "LLM-controlled bot that responds to chat commands",
+  "version": "1.0.0",
+  "minecraft": {
+    "gamemode": "survival",
+    "difficulty": "normal",
+    "time": 6000,
+    "weather": "clear"
+  },
+  "spawn": {
+    "x": 0,
+    "y": 65,
+    "z": 0
+  },
+  "setup": {
+    "commands": "setup.mcfunction"
+  },
+  "spawner": {
+    "commands": "spawn-resources.mcfunction",
+    "intervalMs": 30000
+  }
+}
