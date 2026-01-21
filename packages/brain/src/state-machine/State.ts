@@ -1,3 +1,11 @@
+export interface PlayerInfo {
+  username: string;
+  x: number;
+  y: number;
+  z: number;
+  distance: number;
+}
+
 export interface SensorData {
   timestamp: string;
   botId: string;
@@ -31,6 +39,7 @@ export interface SensorData {
     isMining: boolean;
     targetBlock: BlockInfo | null;
   };
+  nearbyPlayers: PlayerInfo[];
 }
 
 export interface BlockInfo {

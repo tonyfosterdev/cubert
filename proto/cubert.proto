@@ -67,6 +67,15 @@ message SensorData {
   HealthData health = 5;
   BlocksData nearby_blocks = 6;
   PathStatus path_status = 7;
+  repeated PlayerInfo nearby_players = 8;
+}
+
+message PlayerInfo {
+  string username = 1;
+  double x = 2;
+  double y = 3;
+  double z = 4;
+  float distance = 5;                 // Distance from bot
 }
 
 message PositionData {

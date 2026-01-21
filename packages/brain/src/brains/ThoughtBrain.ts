@@ -8,7 +8,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { SensorData, Action, ActionEvent } from '../types';
 import { Thought, ChatMessage, createChatThought } from '../thought';
-import { LLMInterpreter, ToolCall, LLMConfig } from '../llm';
+import { LLMInterpreter, ToolCall, LLMConfig, ToolResolver } from '../llm';
 
 export interface ThoughtBrainConfig {
   llm: LLMConfig;
@@ -225,61 +225,32 @@ export class ThoughtBrain {
     return action;
   }
 
-  private resolveTarget(target: string): { x: number; y: number; z: number } | null {
-    // Handle coordinate format "x,y,z"
-    if (target.includes(',')) {
-      const [x, y, z] = target.split(',').map(Number);
-      if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
-        return { x, y, z };
-      }
+  private resolveTarget(target: string): { x: number; y: number; z: number; name?: string } | null {
+    const resolver = new ToolResolver(this.sensors);
+    const result = resolver.resolveMovementTarget(target);
+
+    if (result.position) {
+      return { ...result.position, name: result.name };
     }
 
-    // Handle named targets
-    switch (target.toLowerCase()) {
-      case 'gold':
-      case 'gold_ore':
-      case 'nearest_gold': {
-        const gold = this.sensors.nearbyBlocks?.goldBlocks?.[0];
-        return gold ? { x: gold.x, y: gold.y, z: gold.z } : null;
-      }
-
-      case 'chest': {
-        const chest = this.sensors.nearbyBlocks?.chestBlocks?.[0];
-        return chest ? { x: chest.x, y: chest.y, z: chest.z } : null;
-      }
-
-      case 'player':
-        // For now, we don't have player position from sensors
-        // This will be resolved in ToolResolver (Commit 3)
-        console.warn('[ThoughtBrain] Player target not yet implemented');
-        return null;
-
-      default:
-        return null;
+    if (result.error) {
+      console.warn(`[ThoughtBrain] ${result.error}`);
     }
+    return null;
   }
 
   private resolveMineTarget(target: string): { x: number; y: number; z: number } | null {
-    // Handle coordinate format "x,y,z"
-    if (target.includes(',')) {
-      const [x, y, z] = target.split(',').map(Number);
-      if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
-        return { x, y, z };
-      }
+    const resolver = new ToolResolver(this.sensors);
+    const result = resolver.resolveMiningTarget(target);
+
+    if (result.position) {
+      return result.position;
     }
 
-    // Handle named targets
-    switch (target.toLowerCase()) {
-      case 'gold':
-      case 'gold_ore':
-      case 'nearest_gold': {
-        const gold = this.sensors.nearbyBlocks?.goldBlocks?.[0];
-        return gold ? { x: gold.x, y: gold.y, z: gold.z } : null;
-      }
-
-      default:
-        return null;
+    if (result.error) {
+      console.warn(`[ThoughtBrain] ${result.error}`);
     }
+    return null;
   }
 
   reset(): void {

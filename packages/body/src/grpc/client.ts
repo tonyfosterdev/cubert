@@ -200,6 +200,13 @@ export class BrainClient extends EventEmitter {
         isMining: data.pathStatus.isMining,
         targetBlock: data.pathStatus.targetBlock,
       },
+      nearbyPlayers: (data.nearbyPlayers || []).map((p) => ({
+        username: p.username,
+        x: p.x,
+        y: p.y,
+        z: p.z,
+        distance: p.distance,
+      })),
     };
   }
 

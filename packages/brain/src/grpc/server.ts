@@ -188,6 +188,13 @@ export class BrainServer {
         isMining: msg.pathStatus?.isMining || false,
         targetBlock: msg.pathStatus?.targetBlock || null,
       },
+      nearbyPlayers: (msg.nearbyPlayers || []).map((p: any) => ({
+        username: p.username || '',
+        x: p.x || 0,
+        y: p.y || 0,
+        z: p.z || 0,
+        distance: p.distance || 0,
+      })),
     };
   }
 

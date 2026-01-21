@@ -31,6 +31,15 @@ export interface SensorData {
     isMining: boolean;
     targetBlock: BlockInfo | null;
   };
+  nearbyPlayers: PlayerInfo[];
+}
+
+export interface PlayerInfo {
+  username: string;
+  x: number;
+  y: number;
+  z: number;
+  distance: number;
 }
 
 export interface BlockInfo {

@@ -144,6 +144,7 @@ export class LLMInterpreter {
     const pos = sensors.position;
     const gold = sensors.nearbyBlocks?.goldBlocks || [];
     const chests = sensors.nearbyBlocks?.chestBlocks || [];
+    const players = sensors.nearbyPlayers || [];
     const inventory = sensors.inventory?.slots || [];
 
     const goldItems = inventory.filter(s =>
@@ -159,10 +160,11 @@ Health: ${sensors.health?.health || 20}/20
 Gold in inventory: ${goldCount}
 Nearby gold blocks: ${gold.length > 0 ? gold.map(g => `(${g.x},${g.y},${g.z})`).join(', ') : 'none'}
 Nearby chests: ${chests.length > 0 ? chests.map(c => `(${c.x},${c.y},${c.z})`).join(', ') : 'none'}
+Nearby players: ${players.length > 0 ? players.map(p => `${p.username} at (${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)})`).join(', ') : 'none'}
 
 ## Instructions
 - Respond to greetings with a friendly speak command
-- For movement requests, use move_to with appropriate target
+- For movement requests (like "come here", "come to me"), use move_to with target "player"
 - For mining requests, use move_to then mine_block
 - Always acknowledge commands with a brief speak first
 - Be concise in chat messages (Minecraft has character limits)

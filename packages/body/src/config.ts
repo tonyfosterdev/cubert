@@ -16,6 +16,7 @@ export interface BodyConfig {
     sendIntervalMs: number;
     blockSearchRadius: number;
     blockSearchCount: number;
+    playerSearchCount: number;
   };
 }
 
@@ -37,5 +38,6 @@ export const defaultConfig: BodyConfig = {
     sendIntervalMs: 2000, // 2 seconds between sensor updates (reduces CPU)
     blockSearchRadius: 12, // Reduced from 16 to lower CPU
     blockSearchCount: 5,
+    playerSearchCount: 10, // Max nearby players to track
   },
 };
