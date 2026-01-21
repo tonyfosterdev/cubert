@@ -8,6 +8,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { SensorData } from '../types';
 import { Thought } from '../thought';
+import { llmCallsTotal, llmLatency } from '../metrics';
 
 export interface ToolCall {
   tool: string;
@@ -123,6 +124,8 @@ export class LLMInterpreter {
 
     console.log(`[LLM] Interpreting thought: "${thought.content}"`);
 
+    const endTimer = llmLatency.startTimer();
+
     try {
       const response = await this.client.messages.create({
         model: this.config.model,
@@ -132,8 +135,13 @@ export class LLMInterpreter {
         messages: [{ role: 'user', content: userMessage }],
       });
 
+      endTimer();
+      llmCallsTotal.inc({ status: 'success' });
+
       return this.extractToolCalls(response);
     } catch (error) {
+      endTimer();
+      llmCallsTotal.inc({ status: 'error' });
       console.error('[LLM] Error calling Claude:', error);
       // Return a speak action to indicate error
       return [{ tool: 'speak', args: { message: "Sorry, I couldn't process that request." } }];

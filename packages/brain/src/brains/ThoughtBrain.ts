@@ -10,6 +10,7 @@ import { SensorData, Action, ActionEvent } from '../types';
 import { Thought, ChatMessage, createChatThought } from '../thought';
 import { LLMInterpreter, ToolCall, LLMConfig, ToolResolver } from '../llm';
 import { CommandQueue, Command } from '../command';
+import { thoughtsProcessedTotal, commandsQueuedTotal, commandQueueLength } from '../metrics';
 
 export interface ThoughtBrainConfig {
   llm: LLMConfig;
@@ -78,6 +79,8 @@ export class ThoughtBrain {
   private tryExecuteNextCommand(): Action | null {
     const command = this.commandQueue.dequeue();
     if (command) {
+      // Update queue length metric
+      commandQueueLength.set(this.commandQueue.length());
       return command.action;
     }
     return null;
@@ -105,9 +108,18 @@ export class ThoughtBrain {
     this.isProcessing = true;
     const thought = this.thoughtQueue.shift()!;
 
+    // Track thought processing
+    thoughtsProcessedTotal.inc({ source: thought.source });
+
     try {
       const toolCalls = await this.interpreter.interpret(thought, this.sensors);
       const commands = this.convertToolCallsToCommands(toolCalls);
+
+      // Track commands queued
+      for (const cmd of commands) {
+        const toolName = cmd.description.split(':')[0].toLowerCase().replace('say', 'speak');
+        commandsQueuedTotal.inc({ tool: toolName });
+      }
 
       // Check if we have a pending cancel action (from stop command)
       const actions: Action[] = [];
@@ -120,6 +132,9 @@ export class ThoughtBrain {
       if (commands.length > 0) {
         this.commandQueue.enqueue(...commands);
       }
+
+      // Update queue length metric
+      commandQueueLength.set(this.commandQueue.length());
 
       this.isProcessing = false;
 

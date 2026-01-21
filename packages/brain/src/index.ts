@@ -2,10 +2,14 @@ import { defaultConfig } from './config';
 import { BrainServer } from './grpc/server';
 import { createGoldMiningStateMachine } from './state-machine/scenarios/gold-mining';
 import { ThoughtBrain } from './brains';
+import { startMetricsServer } from './metrics';
 
 async function main() {
   console.log('Cubert Brain starting...');
   console.log(`Scenario: ${defaultConfig.scenario}`);
+
+  // Start metrics server
+  startMetricsServer(9092);
 
   let brainImpl: ReturnType<typeof createGoldMiningStateMachine> | ThoughtBrain;
 
