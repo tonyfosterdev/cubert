@@ -223,6 +223,7 @@ export class BrainServer {
       moveTo: action.moveTo,
       mineBlock: action.mineBlock,
       depositItems: action.depositItems,
+      withdrawItems: action.withdrawItems,
       speak: action.speak,
       idle: action.idle,
       cancel: action.cancel,

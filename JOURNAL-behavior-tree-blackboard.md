@@ -240,3 +240,107 @@ scenarios/semi-autonomous/setup.mcfunction       # NEW - world setup
 scenarios/semi-autonomous/spawn-resources.mcfunction  # NEW - gold spawner
 docker-compose.yml                       # MODIFIED - API key passthrough
 ```
+
+---
+
+## Session 3 - 2026-01-21 (Withdraw Items Feature)
+
+### Work Completed
+
+Added ability for bot to withdraw/take items from chests via natural language commands.
+
+#### 1. Protocol Buffer Updates
+`proto/cubert.proto`:
+- Added `ACTION_TYPE_WITHDRAW_ITEMS = 7` to ActionType enum
+- Added `WithdrawItemsAction` message with chestX/Y/Z, itemNames, count fields
+- Added `withdraw_items` to Action oneof payload
+
+#### 2. Brain Updates
+- **LLMInterpreter.ts**: Added `withdraw_items` tool definition and command patterns
+- **ThoughtBrain.ts**: Added `createWithdrawAction()` method and tool handling
+- **types.ts**: Added `withdrawItems` to Action interface
+- **grpc/server.ts**: Added `withdrawItems` to action serialization
+
+#### 3. Body Updates
+- **InventoryActuator.ts**:
+  - Renamed `execute()` to `deposit()` for clarity
+  - Added `withdraw()` method with chest opening, item filtering, withdrawal loop
+  - Added distance check (4.5 blocks) to prevent hanging on unreachable chests
+- **actuators/index.ts**: Added `ACTION_TYPE_WITHDRAW_ITEMS` case, updated deposit call
+- **grpc/client.ts**: Added `withdrawItems` to action deserialization
+
+#### 4. Scenario Update
+`scenarios/semi-autonomous/setup.mcfunction`:
+- Added `item replace block -8 64 0 container.0 with iron_pickaxe 1` to put pickaxe in chest at start
+
+### Debugging Journey
+
+This feature required debugging multiple serialization points:
+
+1. **First attempt**: Action executed but payload was `undefined`
+2. **Added debug logging**: Discovered raw action object had no `withdrawItems` field
+3. **Checked body deserializer**: Added `withdrawItems` to `deserializeAction()` - still undefined
+4. **Checked brain serializer**: Found `serializeAction()` was missing `withdrawItems` field
+5. **Fixed serialization**: Action now properly passes through gRPC
+
+**Key insight**: Adding a new action type requires updates in 6+ places across the proto/brain/body stack:
+1. Proto message definition
+2. Proto enum value
+3. Brain types interface
+4. Brain action creation method
+5. Brain gRPC serialization
+6. Body gRPC deserialization
+7. Body action interface
+8. Body actuator implementation
+9. Body action routing
+
+### Issues Encountered
+
+#### Pathfinder "Path was stopped" Errors
+- Movement actions frequently fail with "Path was stopped before it could be completed"
+- Bot is at (-5.5, 64, 0.5), chest at (-8, 64, 0) - only ~2.5 blocks away
+- Pathfinder gives up even for short distances
+- **Workaround**: Actions still succeed if bot is close enough (withdraw works from current position)
+
+#### Chest Distance Check
+- Without distance check, `openContainer()` would hang indefinitely if chest too far
+- Added 4.5 block distance validation before attempting to open
+- Returns graceful error instead of hanging
+
+### Test Results
+
+```
+[WITHDRAW] Opening chest at (-8, 64, 0)
+[WITHDRAW] Took 1x iron_pickaxe from chest
+[WITHDRAW] Took 1x iron_pickaxe from chest
+[WITHDRAW] Withdrew 2 item(s) total
+[EVENT] Action completed: SUCCESS
+```
+
+LLM correctly extracts item names from natural language:
+- "get the pickaxe from the chest" → `withdraw_items(["iron_pickaxe"])`
+- "take items from chest" → `withdraw_items([])`  (all items)
+
+### Files Changed
+
+```
+proto/cubert.proto                                    # WithdrawItemsAction message
+packages/brain/src/llm/LLMInterpreter.ts             # withdraw_items tool
+packages/brain/src/brains/ThoughtBrain.ts            # createWithdrawAction()
+packages/brain/src/types.ts                          # Action interface
+packages/brain/src/grpc/server.ts                    # serializeAction()
+packages/body/src/actuators/InventoryActuator.ts     # withdraw() method
+packages/body/src/actuators/index.ts                 # action routing
+packages/body/src/grpc/client.ts                     # deserializeAction()
+scenarios/semi-autonomous/setup.mcfunction           # pickaxe in chest
+```
+
+### Learnings
+
+1. **End-to-end tracing is essential**: When data disappears between components, add logging at each serialization boundary.
+
+2. **gRPC + TypeScript quirk**: Field names must match exactly between serialization and deserialization. The proto loader with `keepCase: false` converts snake_case to camelCase.
+
+3. **Mineflayer chest interaction**: `openContainer()` can hang if bot is too far. Always validate distance before attempting chest operations.
+
+4. **LLM tool extraction**: Claude reliably extracts specific item names from natural language and maps them to tool parameters.

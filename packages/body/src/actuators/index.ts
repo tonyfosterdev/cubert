@@ -13,6 +13,7 @@ export interface Action {
   moveTo?: { x: number; y: number; z: number; range?: number; sprint?: boolean };
   mineBlock?: { x: number; y: number; z: number };
   depositItems?: { chestX: number; chestY: number; chestZ: number; itemNames?: string[] };
+  withdrawItems?: { chestX: number; chestY: number; chestZ: number; itemNames?: string[]; count?: number };
   speak?: { message: string };
   idle?: { durationMs: number };
   cancel?: { targetActionId: string };
@@ -60,7 +61,13 @@ export class ActuatorRegistry extends EventEmitter {
 
       case 'ACTION_TYPE_DEPOSIT_ITEMS':
         if (action.depositItems) {
-          await this.inventory.execute(action.actionId, action.depositItems);
+          await this.inventory.deposit(action.actionId, action.depositItems);
+        }
+        break;
+
+      case 'ACTION_TYPE_WITHDRAW_ITEMS':
+        if (action.withdrawItems) {
+          await this.inventory.withdraw(action.actionId, action.withdrawItems);
         }
         break;
 

@@ -220,6 +220,8 @@ export class ThoughtBrain {
         return `Mine: ${call.args.target}`;
       case 'deposit_items':
         return `Deposit items`;
+      case 'withdraw_items':
+        return `Withdraw items`;
       case 'stop':
         return `Stop`;
       case 'wait':
@@ -242,6 +244,9 @@ export class ThoughtBrain {
 
       case 'deposit_items':
         return this.createDepositAction(call.args.items);
+
+      case 'withdraw_items':
+        return this.createWithdrawAction(call.args.items, call.args.count);
 
       case 'stop':
         // Handled specially in convertToolCallsToCommands
@@ -320,6 +325,26 @@ export class ThoughtBrain {
         chestY: chest.y,
         chestZ: chest.z,
         itemNames: items || [],
+      },
+    };
+  }
+
+  private createWithdrawAction(items?: string[], count?: number): Action | null {
+    const chest = this.sensors.nearbyBlocks?.chestBlocks?.[0];
+    if (!chest) {
+      return this.createSpeakAction("I don't see any chests nearby.");
+    }
+
+    return {
+      actionId: uuidv4(),
+      timestamp: Date.now().toString(),
+      type: 'ACTION_TYPE_WITHDRAW_ITEMS',
+      withdrawItems: {
+        chestX: chest.x,
+        chestY: chest.y,
+        chestZ: chest.z,
+        itemNames: items || [],
+        count: count || 0,
       },
     };
   }

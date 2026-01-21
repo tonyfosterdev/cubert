@@ -57,6 +57,7 @@ export interface Action {
   moveTo?: { x: number; y: number; z: number; range: number; sprint: boolean };
   mineBlock?: { x: number; y: number; z: number };
   depositItems?: { chestX: number; chestY: number; chestZ: number; itemNames: string[] };
+  withdrawItems?: { chestX: number; chestY: number; chestZ: number; itemNames: string[]; count: number };
   speak?: { message: string };
   idle?: { durationMs: number };
   cancel?: { targetActionId: string };

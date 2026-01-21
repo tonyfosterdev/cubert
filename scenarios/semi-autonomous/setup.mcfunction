@@ -13,6 +13,9 @@ fill 5 62 5 8 62 8 lava
 # Place chest for deposits
 setblock -8 64 0 chest
 
+# Put a pickaxe in the chest
+item replace block -8 64 0 container.0 with iron_pickaxe 1
+
 # Set time and weather
 time set day
 weather clear

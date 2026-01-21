@@ -80,6 +80,25 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'withdraw_items',
+    description: 'Take/withdraw items from a nearby chest.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        items: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Item names to withdraw (e.g., ["iron_pickaxe", "raw_gold"]). Empty array means all items.',
+        },
+        count: {
+          type: 'number',
+          description: 'Maximum count per item to withdraw. 0 or omitted means all available.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
     name: 'stop',
     description: 'Stop current action and clear command queue.',
     input_schema: {
@@ -179,6 +198,8 @@ Nearby players: ${players.length > 0 ? players.map(p => `${p.username} at (${Mat
 - "come here" / "come to me" → speak + move_to(player)
 - "mine gold" / "mine that gold" → speak + move_to(gold) + mine_block(nearest_gold)
 - "deposit" / "put items in chest" → speak + move_to(chest) + deposit_items
+- "get/take/withdraw from chest" → speak + move_to(chest) + withdraw_items
+- "get the pickaxe" → speak + move_to(chest) + withdraw_items(["iron_pickaxe"])
 - "stop" → speak + stop(interrupt: true)
 - If unsure what the player wants, ask for clarification via speak`;
   }

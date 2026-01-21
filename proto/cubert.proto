@@ -160,6 +160,7 @@ message Action {
     SpeakAction speak = 13;
     IdleAction idle = 14;
     CancelAction cancel = 15;
+    WithdrawItemsAction withdraw_items = 16;
   }
 }
 
@@ -171,6 +172,7 @@ enum ActionType {
   ACTION_TYPE_SPEAK = 4;
   ACTION_TYPE_IDLE = 5;
   ACTION_TYPE_CANCEL = 6;
+  ACTION_TYPE_WITHDRAW_ITEMS = 7;
 }
 
 message MoveToAction {
@@ -204,6 +206,14 @@ message IdleAction {
 
 message CancelAction {
   string target_action_id = 1;
+}
+
+message WithdrawItemsAction {
+  int32 chest_x = 1;
+  int32 chest_y = 2;
+  int32 chest_z = 3;
+  repeated string item_names = 4;     // Items to withdraw (empty = all)
+  int32 count = 5;                    // Max count per item (0 = all available)
 }
 
 // ============================================================================
