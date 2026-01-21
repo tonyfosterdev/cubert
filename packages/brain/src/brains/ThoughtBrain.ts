@@ -109,6 +109,13 @@ export class ThoughtBrain {
       const toolCalls = await this.interpreter.interpret(thought, this.sensors);
       const commands = this.convertToolCallsToCommands(toolCalls);
 
+      // Check if we have a pending cancel action (from stop command)
+      const actions: Action[] = [];
+      if (this.pendingCancelAction) {
+        actions.push(this.pendingCancelAction);
+        this.pendingCancelAction = null;
+      }
+
       // Queue all commands
       if (commands.length > 0) {
         this.commandQueue.enqueue(...commands);
@@ -118,7 +125,11 @@ export class ThoughtBrain {
 
       // Execute first command immediately
       const firstAction = this.tryExecuteNextCommand();
-      return firstAction ? [firstAction] : [];
+      if (firstAction) {
+        actions.push(firstAction);
+      }
+
+      return actions;
     } catch (error) {
       console.error('[ThoughtBrain] Error processing thought:', error);
       this.isProcessing = false;
@@ -130,6 +141,19 @@ export class ThoughtBrain {
     const commands: Command[] = [];
 
     for (const call of toolCalls) {
+      // Handle stop specially - it clears the queue immediately
+      if (call.tool === 'stop') {
+        this.handleStopCommand(call.args.interrupt);
+        // Add speak acknowledgment
+        const speakAction = this.createSpeakAction('Stopping.');
+        commands.push({
+          id: speakAction.actionId,
+          action: speakAction,
+          description: 'Say: "Stopping."',
+        });
+        continue;
+      }
+
       const command = this.toolCallToCommand(call);
       if (command) {
         commands.push(command);
@@ -138,6 +162,27 @@ export class ThoughtBrain {
 
     return commands;
   }
+
+  private handleStopCommand(interrupt?: boolean): void {
+    console.log('[ThoughtBrain] Stop command received');
+
+    // Clear all pending commands
+    this.commandQueue.clear();
+
+    // If interrupt is true and there's a current action, we should cancel it
+    // The cancel action will be handled by the body
+    if (interrupt && this.commandQueue.hasInProgress()) {
+      const currentActionId = this.commandQueue.getCurrentActionId();
+      if (currentActionId) {
+        console.log(`[ThoughtBrain] Cancelling current action: ${currentActionId}`);
+        // Create a cancel action - this will be emitted immediately
+        this.pendingCancelAction = this.createCancelAction(currentActionId);
+      }
+      this.commandQueue.clearAll();
+    }
+  }
+
+  private pendingCancelAction: Action | null = null;
 
   private toolCallToCommand(call: ToolCall): Command | null {
     const action = this.toolCallToAction(call);
@@ -184,8 +229,8 @@ export class ThoughtBrain {
         return this.createDepositAction(call.args.items);
 
       case 'stop':
-        // For now, just acknowledge - full interrupt handling in later commit
-        return this.createSpeakAction('Stopping.');
+        // Handled specially in convertToolCallsToCommands
+        return null;
 
       case 'wait':
         return this.createIdleAction(call.args.duration_ms || 1000);
@@ -273,6 +318,15 @@ export class ThoughtBrain {
     };
   }
 
+  private createCancelAction(targetActionId: string): Action {
+    return {
+      actionId: uuidv4(),
+      timestamp: Date.now().toString(),
+      type: 'ACTION_TYPE_CANCEL',
+      cancel: { targetActionId },
+    };
+  }
+
   private resolveTarget(target: string): { x: number; y: number; z: number; name?: string } | null {
     const resolver = new ToolResolver(this.sensors);
     const result = resolver.resolveMovementTarget(target);
@@ -306,6 +360,7 @@ export class ThoughtBrain {
     this.commandQueue.clearAll();
     this.thoughtQueue = [];
     this.isProcessing = false;
+    this.pendingCancelAction = null;
     console.log('[ThoughtBrain] Reset');
   }
 
