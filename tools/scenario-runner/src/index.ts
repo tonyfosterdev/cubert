@@ -74,6 +74,28 @@ async function executeCommands(rcon: Rcon, commands: string[], quiet = false): P
   }
 }
 
+async function ensureBotHasPickaxe(rcon: Rcon, botUsername: string): Promise<void> {
+  try {
+    // Check bot's inventory for any pickaxe
+    const response = await rcon.send(`data get entity ${botUsername} Inventory`);
+
+    // If bot doesn't exist or has no inventory data, skip
+    if (!response || response.includes('No entity')) {
+      return;
+    }
+
+    // Check if any pickaxe is in inventory
+    const hasPickaxe = response.includes('pickaxe');
+
+    if (!hasPickaxe) {
+      console.log(`[${timestamp()}] Bot has no pickaxe, giving one...`);
+      await rcon.send(`give ${botUsername} iron_pickaxe 1`);
+    }
+  } catch (err) {
+    // Silently ignore errors (bot might be dead/respawning)
+  }
+}
+
 async function main() {
   const scenario = process.env.SCENARIO || 'gold-mining';
   const mcHost = process.env.MC_HOST || 'localhost';
@@ -173,7 +195,16 @@ async function main() {
 
   console.log(`\n[${timestamp()}] === Setup complete! ===`);
 
-  // ========== PHASE 2: Continuous spawner ==========
+  // ========== PHASE 4: Bot equipment monitor ==========
+  // Periodically check if bot has a pickaxe (handles respawn after death)
+  const equipmentCheckIntervalMs = 5000;
+  console.log(`[${timestamp()}] Starting equipment monitor (every ${equipmentCheckIntervalMs / 1000}s)`);
+
+  setInterval(async () => {
+    await ensureBotHasPickaxe(rcon, botUsername);
+  }, equipmentCheckIntervalMs);
+
+  // ========== PHASE 5: Continuous spawner ==========
   if (config.spawner) {
     const spawnerPath = path.join(scenarioDir, config.spawner.commands);
     if (!fs.existsSync(spawnerPath)) {
@@ -184,7 +215,7 @@ async function main() {
     const spawnCommands = fs.readFileSync(spawnerPath, 'utf-8').split('\n');
     const intervalMs = spawnIntervalOverride ?? config.spawner.intervalMs;
 
-    console.log(`\n[${timestamp()}] --- Phase 4: Starting Spawner ---`);
+    console.log(`\n[${timestamp()}] --- Phase 5: Starting Spawner ---`);
     console.log(`[${timestamp()}] Interval: ${intervalMs}ms`);
     console.log(`[${timestamp()}] Press Ctrl+C to stop\n`);
 
@@ -199,8 +230,10 @@ async function main() {
       await executeCommands(rcon, spawnCommands, true);
     }
   } else {
-    console.log(`[${timestamp()}] No spawner configured, exiting.`);
-    rcon.end();
+    // Keep running for equipment monitor even without spawner
+    console.log(`[${timestamp()}] No spawner configured, running equipment monitor only.`);
+    // Keep process alive
+    await new Promise(() => {});
   }
 }
 
