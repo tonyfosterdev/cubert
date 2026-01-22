@@ -126,6 +126,23 @@ const TOOLS: Anthropic.Tool[] = [
       required: ['duration_ms'],
     },
   },
+  {
+    name: 'remember',
+    description: 'Remember a location for future reference. Use when the player asks you to remember where something is. Extract coordinates from nearby blocks in the current state.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        name: {
+          type: 'string',
+          description: 'What to remember (e.g., "chest", "home", "mine")',
+        },
+        x: { type: 'number', description: 'X coordinate' },
+        y: { type: 'number', description: 'Y coordinate' },
+        z: { type: 'number', description: 'Z coordinate' },
+      },
+      required: ['name', 'x', 'y', 'z'],
+    },
+  },
 ];
 
 export class LLMInterpreter {
@@ -137,8 +154,12 @@ export class LLMInterpreter {
     this.config = config;
   }
 
-  async interpret(thought: Thought, sensors: SensorData): Promise<ToolCall[]> {
-    const systemPrompt = this.buildSystemPrompt(sensors);
+  async interpret(
+    thought: Thought,
+    sensors: SensorData,
+    rememberedLocations: Map<string, { x: number; y: number; z: number }> = new Map()
+  ): Promise<ToolCall[]> {
+    const systemPrompt = this.buildSystemPrompt(sensors, rememberedLocations);
     const userMessage = this.buildUserMessage(thought);
 
     console.log(`[LLM] Interpreting thought: "${thought.content}"`);
@@ -167,7 +188,10 @@ export class LLMInterpreter {
     }
   }
 
-  private buildSystemPrompt(sensors: SensorData): string {
+  private buildSystemPrompt(
+    sensors: SensorData,
+    rememberedLocations: Map<string, { x: number; y: number; z: number }>
+  ): string {
     const pos = sensors.position;
     const gold = sensors.nearbyBlocks?.goldBlocks || [];
     const chests = sensors.nearbyBlocks?.chestBlocks || [];
@@ -179,6 +203,15 @@ export class LLMInterpreter {
     );
     const goldCount = goldItems.reduce((sum, s) => sum + s.count, 0);
 
+    // Build remembered locations section
+    let rememberedSection = '';
+    if (rememberedLocations.size > 0) {
+      const locations = Array.from(rememberedLocations.entries())
+        .map(([name, p]) => `${name}: (${p.x}, ${p.y}, ${p.z})`)
+        .join(', ');
+      rememberedSection = `\nRemembered locations: ${locations}`;
+    }
+
     return `You are a helpful Minecraft bot. Convert player commands to tool calls.
 
 ## Current State
@@ -187,7 +220,7 @@ Health: ${sensors.health?.health || 20}/20
 Gold in inventory: ${goldCount}
 Nearby gold blocks: ${gold.length > 0 ? gold.map(g => `(${g.x},${g.y},${g.z})`).join(', ') : 'none'}
 Nearby chests: ${chests.length > 0 ? chests.map(c => `(${c.x},${c.y},${c.z})`).join(', ') : 'none'}
-Nearby players: ${players.length > 0 ? players.map(p => `${p.username} at (${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)})`).join(', ') : 'none'}
+Nearby players: ${players.length > 0 ? players.map(p => `${p.username} at (${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)})`).join(', ') : 'none'}${rememberedSection}
 
 ## Instructions
 - Always acknowledge commands with a brief speak first
@@ -201,6 +234,7 @@ Nearby players: ${players.length > 0 ? players.map(p => `${p.username} at (${Mat
 - "get/take/withdraw from chest" → speak + move_to(chest) + withdraw_items
 - "get the pickaxe" → speak + move_to(chest) + withdraw_items(["iron_pickaxe"])
 - "stop" → speak + stop(interrupt: true)
+- "remember where X is" / "don't forget X" → remember(name, x, y, z) + speak acknowledgment
 - If unsure what the player wants, ask for clarification via speak`;
   }
 

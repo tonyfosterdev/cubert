@@ -21,9 +21,14 @@ export interface ResolvedTarget {
 
 export class ToolResolver {
   private sensors: SensorData;
+  private rememberedLocations: Map<string, { x: number; y: number; z: number }>;
 
-  constructor(sensors: SensorData) {
+  constructor(
+    sensors: SensorData,
+    rememberedLocations: Map<string, { x: number; y: number; z: number }> = new Map()
+  ) {
     this.sensors = sensors;
+    this.rememberedLocations = rememberedLocations;
   }
 
   /**
@@ -170,10 +175,32 @@ export class ToolResolver {
   }
 
   private getNearestChest(): BlockInfo | null {
+    // First check remembered locations
+    const remembered = this.rememberedLocations.get('chest');
+    if (remembered) {
+      return {
+        x: remembered.x,
+        y: remembered.y,
+        z: remembered.z,
+        distance: this.distanceTo(remembered),
+        blockName: 'chest',
+      };
+    }
+
+    // Fall back to sensor data
     const chests = this.sensors.nearbyBlocks?.chestBlocks || [];
     if (chests.length === 0) return null;
     return chests.reduce((nearest, c) =>
       c.distance < nearest.distance ? c : nearest
     );
+  }
+
+  private distanceTo(pos: { x: number; y: number; z: number }): number {
+    const botPos = this.sensors.position;
+    if (!botPos) return Infinity;
+    const dx = pos.x - botPos.x;
+    const dy = pos.y - botPos.y;
+    const dz = pos.z - botPos.z;
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
   }
 }

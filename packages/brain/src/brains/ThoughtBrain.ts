@@ -22,6 +22,7 @@ export class ThoughtBrain {
   private commandQueue: CommandQueue = new CommandQueue();
   private thoughtQueue: Thought[] = [];
   private isProcessing = false;
+  private rememberedLocations: Map<string, { x: number; y: number; z: number }> = new Map();
 
   constructor(config: ThoughtBrainConfig) {
     this.interpreter = new LLMInterpreter(config.llm);
@@ -112,7 +113,7 @@ export class ThoughtBrain {
     thoughtsProcessedTotal.inc({ source: thought.source });
 
     try {
-      const toolCalls = await this.interpreter.interpret(thought, this.sensors);
+      const toolCalls = await this.interpreter.interpret(thought, this.sensors, this.rememberedLocations);
       const commands = this.convertToolCallsToCommands(toolCalls);
 
       // Track commands queued
@@ -152,6 +153,11 @@ export class ThoughtBrain {
     }
   }
 
+  private rememberLocation(name: string, coords: { x: number; y: number; z: number }): void {
+    this.rememberedLocations.set(name.toLowerCase(), coords);
+    console.log(`[ThoughtBrain] Remembered ${name} at (${coords.x}, ${coords.y}, ${coords.z})`);
+  }
+
   private convertToolCallsToCommands(toolCalls: ToolCall[]): Command[] {
     const commands: Command[] = [];
 
@@ -167,6 +173,13 @@ export class ThoughtBrain {
           description: 'Say: "Stopping."',
         });
         continue;
+      }
+
+      // Handle remember - stores location in memory, no action produced
+      if (call.tool === 'remember') {
+        const { name, x, y, z } = call.args;
+        this.rememberLocation(name, { x, y, z });
+        continue; // No action produced, LLM should also emit speak for acknowledgment
       }
 
       const command = this.toolCallToCommand(call);
@@ -311,8 +324,9 @@ export class ThoughtBrain {
   }
 
   private createDepositAction(items?: string[]): Action | null {
-    const chest = this.sensors.nearbyBlocks?.chestBlocks?.[0];
-    if (!chest) {
+    const resolver = new ToolResolver(this.sensors, this.rememberedLocations);
+    const result = resolver.resolveMovementTarget('chest');
+    if (!result.position) {
       return this.createSpeakAction("I don't see any chests nearby.");
     }
 
@@ -321,17 +335,18 @@ export class ThoughtBrain {
       timestamp: Date.now().toString(),
       type: 'ACTION_TYPE_DEPOSIT_ITEMS',
       depositItems: {
-        chestX: chest.x,
-        chestY: chest.y,
-        chestZ: chest.z,
+        chestX: result.position.x,
+        chestY: result.position.y,
+        chestZ: result.position.z,
         itemNames: items || [],
       },
     };
   }
 
   private createWithdrawAction(items?: string[], count?: number): Action | null {
-    const chest = this.sensors.nearbyBlocks?.chestBlocks?.[0];
-    if (!chest) {
+    const resolver = new ToolResolver(this.sensors, this.rememberedLocations);
+    const result = resolver.resolveMovementTarget('chest');
+    if (!result.position) {
       return this.createSpeakAction("I don't see any chests nearby.");
     }
 
@@ -340,9 +355,9 @@ export class ThoughtBrain {
       timestamp: Date.now().toString(),
       type: 'ACTION_TYPE_WITHDRAW_ITEMS',
       withdrawItems: {
-        chestX: chest.x,
-        chestY: chest.y,
-        chestZ: chest.z,
+        chestX: result.position.x,
+        chestY: result.position.y,
+        chestZ: result.position.z,
         itemNames: items || [],
         count: count || 0,
       },
@@ -368,7 +383,7 @@ export class ThoughtBrain {
   }
 
   private resolveTarget(target: string): { x: number; y: number; z: number; name?: string } | null {
-    const resolver = new ToolResolver(this.sensors);
+    const resolver = new ToolResolver(this.sensors, this.rememberedLocations);
     const result = resolver.resolveMovementTarget(target);
 
     if (result.position) {
@@ -382,7 +397,7 @@ export class ThoughtBrain {
   }
 
   private resolveMineTarget(target: string): { x: number; y: number; z: number } | null {
-    const resolver = new ToolResolver(this.sensors);
+    const resolver = new ToolResolver(this.sensors, this.rememberedLocations);
     const result = resolver.resolveMiningTarget(target);
 
     if (result.position) {
@@ -401,6 +416,7 @@ export class ThoughtBrain {
     this.thoughtQueue = [];
     this.isProcessing = false;
     this.pendingCancelAction = null;
+    this.rememberedLocations.clear();
     console.log('[ThoughtBrain] Reset');
   }
 
