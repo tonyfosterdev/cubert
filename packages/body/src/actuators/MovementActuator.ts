@@ -4,7 +4,8 @@ import { Vec3 } from 'vec3';
 import { BaseActuator } from './BaseActuator';
 
 // Buffer distance from hazards like lava during normal movement
-const HAZARD_BUFFER_DISTANCE = 4;
+// At least 5 blocks buffer (or max possible if less space available)
+const HAZARD_BUFFER_DISTANCE = 5;
 const HAZARD_SCAN_RADIUS = 32;
 
 /**
@@ -129,8 +130,12 @@ export class MovementActuator extends BaseActuator {
 
     const goal = new goals.GoalNear(x, y, z, range);
 
-    if (sprint) {
+    // Only allow sprinting in urgent/danger-ignoring mode
+    if (sprint && ignoreDanger) {
       this.bot.setControlState('sprint', true);
+    } else {
+      // Explicitly disable sprint in safe mode to respect hazard buffer
+      this.bot.setControlState('sprint', false);
     }
 
     // Retry logic for mineflayer-pathfinder flakiness.
@@ -157,10 +162,8 @@ export class MovementActuator extends BaseActuator {
     } finally {
       // Restore original movements and sprint state
       (this.bot as any).pathfinder.setMovements(originalMovements);
+      this.bot.setControlState('sprint', false);
       console.log('[MOVE] Restored original movements');
-      if (sprint) {
-        this.bot.setControlState('sprint', false);
-      }
     }
   }
 
@@ -171,13 +174,16 @@ export class MovementActuator extends BaseActuator {
     const movements = new BufferedMovements(this.bot);
     const mcData = require('minecraft-data')(this.bot.version);
 
+    // Safe mode: no parkour or sprinting to ensure buffer is respected
     movements.canDig = true;
     movements.allowParkour = false;
-    movements.allowSprinting = true;
+    movements.allowSprinting = false;
 
-    // Add standard hazard blocks to avoid
+    // Add standard hazard blocks to avoid (including flowing variants)
     movements.blocksCantBreak.add(mcData.blocksByName.lava?.id);
+    movements.blocksCantBreak.add(mcData.blocksByName.flowing_lava?.id);
     movements.blocksToAvoid.add(mcData.blocksByName.lava?.id);
+    movements.blocksToAvoid.add(mcData.blocksByName.flowing_lava?.id);
     movements.blocksToAvoid.add(mcData.blocksByName.fire?.id);
     movements.blocksToAvoid.add(mcData.blocksByName.cactus?.id);
     movements.blocksToAvoid.add(mcData.blocksByName.magma_block?.id);
@@ -198,11 +204,12 @@ export class MovementActuator extends BaseActuator {
   }
 
   /**
-   * Scan for hazardous blocks (lava, fire, magma) within radius of the bot.
+   * Scan for hazardous blocks (lava, flowing lava, fire, magma) within radius of the bot.
    */
   private scanForHazards(): Vec3[] {
     const mcData = require('minecraft-data')(this.bot.version);
-    const hazardBlockNames = ['lava', 'fire', 'magma_block'];
+    // Include both source and flowing variants of lava
+    const hazardBlockNames = ['lava', 'flowing_lava', 'fire', 'magma_block'];
 
     const hazardBlockIds = hazardBlockNames
       .map((name) => mcData.blocksByName[name]?.id)
