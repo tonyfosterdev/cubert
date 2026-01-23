@@ -46,6 +46,10 @@ const TOOLS: Anthropic.Tool[] = [
           type: 'string',
           description: 'Target: "player", "gold", "chest", or coordinates like "100,64,200"',
         },
+        urgent: {
+          type: 'boolean',
+          description: 'If true, sprint and ignore hazards like lava. Use when player says "hurry", "quickly", "run", "fast", or "ignore danger".',
+        },
       },
       required: ['target'],
     },
@@ -229,6 +233,8 @@ Nearby players: ${players.length > 0 ? players.map(p => `${p.username} at (${Mat
 
 ## Command Patterns
 - "come here" / "come to me" → speak + move_to(player)
+- "hurry to me" / "run here" / "come quickly" → speak + move_to(player, urgent=true)
+- "run to the chest" / "hurry to chest" → speak + move_to(chest, urgent=true)
 - "mine gold" / "mine that gold" → speak + move_to(gold) + mine_block(nearest_gold)
 - "deposit" / "put items in chest" → speak + move_to(chest) + deposit_items
 - "get/take/withdraw from chest" → speak + move_to(chest) + withdraw_items

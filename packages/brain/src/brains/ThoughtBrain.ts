@@ -250,7 +250,7 @@ export class ThoughtBrain {
         return this.createSpeakAction(call.args.message);
 
       case 'move_to':
-        return this.createMoveToAction(call.args.target);
+        return this.createMoveToAction(call.args.target, call.args.urgent);
 
       case 'mine_block':
         return this.createMineBlockAction(call.args.target);
@@ -283,7 +283,7 @@ export class ThoughtBrain {
     };
   }
 
-  private createMoveToAction(target: string): Action | null {
+  private createMoveToAction(target: string, urgent?: boolean): Action | null {
     const position = this.resolveTarget(target);
     if (!position) {
       console.warn(`[ThoughtBrain] Could not resolve target: ${target}`);
@@ -299,7 +299,8 @@ export class ThoughtBrain {
         y: position.y,
         z: position.z,
         range: 2,
-        sprint: false,
+        sprint: urgent || false,
+        ignoreDanger: urgent || false,
       },
     };
   }

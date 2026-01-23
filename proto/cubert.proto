@@ -181,6 +181,7 @@ message MoveToAction {
   int32 z = 3;
   int32 range = 4;                    // How close to get (default 1)
   bool sprint = 5;
+  bool ignore_danger = 6;             // If true, ignore hazards like lava
 }
 
 message MineBlockAction {

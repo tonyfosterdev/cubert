@@ -23,6 +23,10 @@ export class InventoryActuator extends BaseActuator {
     super(bot);
   }
 
+  async execute(_actionId: string, _payload: any): Promise<void> {
+    throw new Error('Use deposit() or withdraw() instead');
+  }
+
   async deposit(actionId: string, payload: DepositItemsPayload): Promise<void> {
     this.currentActionId = actionId;
     this.isExecuting = true;
