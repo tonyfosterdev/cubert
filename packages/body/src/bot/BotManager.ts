@@ -91,7 +91,7 @@ export class BotManager extends EventEmitter {
     const movements = new Movements(this.bot);
 
     movements.canDig = true;
-    movements.allowParkour = true;
+    movements.allowParkour = false;
     movements.allowSprinting = true;
 
     // Avoid lava and other hazards

@@ -1,6 +1,76 @@
 import { Bot } from 'mineflayer';
-import { goals } from 'mineflayer-pathfinder';
+import { goals, Movements } from 'mineflayer-pathfinder';
+import { Vec3 } from 'vec3';
 import { BaseActuator } from './BaseActuator';
+
+// Buffer distance from hazards like lava during normal movement
+const HAZARD_BUFFER_DISTANCE = 4;
+const HAZARD_SCAN_RADIUS = 32;
+
+/**
+ * Custom Movements class that creates a buffer zone around hazards.
+ * Positions within HAZARD_BUFFER_DISTANCE of lava are treated as dangerous.
+ */
+class BufferedMovements extends Movements {
+  private dangerZone: Set<string> = new Set();
+
+  /**
+   * Add all positions within bufferDistance of hazard positions to the danger zone.
+   */
+  setDangerZone(hazardPositions: Vec3[], bufferDistance: number): void {
+    this.dangerZone.clear();
+
+    for (const hazard of hazardPositions) {
+      // Add all positions within buffer distance to danger zone
+      for (let dx = -bufferDistance; dx <= bufferDistance; dx++) {
+        for (let dy = -2; dy <= 2; dy++) {
+          // Vertical range is smaller
+          for (let dz = -bufferDistance; dz <= bufferDistance; dz++) {
+            const key = `${Math.floor(hazard.x) + dx},${Math.floor(hazard.y) + dy},${Math.floor(hazard.z) + dz}`;
+            this.dangerZone.add(key);
+          }
+        }
+      }
+    }
+
+    console.log(`[MOVE] Created danger zone with ${this.dangerZone.size} blocked positions`);
+  }
+
+  /**
+   * Check if a position is in the danger zone (near lava).
+   */
+  private isInDangerZone(x: number, y: number, z: number): boolean {
+    const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
+    return this.dangerZone.has(key);
+  }
+
+  /**
+   * Override getBlock to return a "fake" dangerous block for positions in danger zone.
+   * This makes the pathfinder think these positions are blocked.
+   */
+  getBlock(pos: Vec3, dx: number, dy: number, dz: number): any {
+    const block = super.getBlock(pos, dx, dy, dz);
+
+    // If this position is in the danger zone, mark it as dangerous
+    const checkX = pos.x + dx;
+    const checkY = pos.y + dy;
+    const checkZ = pos.z + dz;
+
+    if (this.isInDangerZone(checkX, checkY, checkZ)) {
+      // Return a modified block that the pathfinder will avoid
+      // We mark it as liquid (like lava) so pathfinder won't walk through
+      if (block) {
+        return {
+          ...block,
+          liquid: true,
+          physical: false,
+        };
+      }
+    }
+
+    return block;
+  }
+}
 
 export interface MoveToPayload {
   x: number;
@@ -34,28 +104,36 @@ export class MovementActuator extends BaseActuator {
 
     const { x, y, z, range = 1, sprint = false, ignoreDanger = false } = payload;
     const botPos = this.bot.entity.position;
-    console.log(`[MOVE] Starting move from (${botPos.x.toFixed(1)}, ${botPos.y.toFixed(1)}, ${botPos.z.toFixed(1)}) to (${x}, ${y}, ${z}) range=${range} sprint=${sprint} ignoreDanger=${ignoreDanger}`);
+    console.log(
+      `[MOVE] Starting move from (${botPos.x.toFixed(1)}, ${botPos.y.toFixed(1)}, ${botPos.z.toFixed(1)}) to (${x}, ${y}, ${z}) range=${range} sprint=${sprint} ignoreDanger=${ignoreDanger}`
+    );
 
-    const goal = new goals.GoalNear(x, y, z, range);
+    // Store original movements to restore later
+    const originalMovements = (this.bot as any).pathfinder.movements;
 
-    // Swap to unsafe movements if ignoreDanger is set
-    let originalMovements: any = null;
     if (ignoreDanger) {
-      originalMovements = (this.bot as any).pathfinder.movements;
+      // Urgent mode: use unsafe movements that ignore all hazards
       (this.bot as any).pathfinder.setMovements(this.createUnsafeMovements());
       console.log('[MOVE] Using UNSAFE movements (ignoring danger)');
+    } else {
+      // Safe mode: scan for hazards and create buffered movements
+      const hazardPositions = this.scanForHazards();
+      if (hazardPositions.length > 0) {
+        console.log(
+          `[MOVE] Found ${hazardPositions.length} hazard blocks, maintaining ${HAZARD_BUFFER_DISTANCE}-block buffer`
+        );
+        const bufferedMovements = this.createBufferedMovements(hazardPositions);
+        (this.bot as any).pathfinder.setMovements(bufferedMovements);
+      }
     }
+
+    const goal = new goals.GoalNear(x, y, z, range);
 
     if (sprint) {
       this.bot.setControlState('sprint', true);
     }
 
     // Retry logic for mineflayer-pathfinder flakiness.
-    // The pathfinder intermittently fails with "Path was stopped before it could
-    // be completed" even for simple straight-line paths. This appears to be a
-    // timing issue where chunk data or physics haven't fully stabilized.
-    // Retrying with delays between attempts resolves this reliably.
-    // See: https://stackoverflow.com/questions/79084385/mineflayer-pathfinder-the-bot-doesnt-want-to-go
     const maxAttempts = 3;
     const delayMs = 500;
 
@@ -78,24 +156,67 @@ export class MovementActuator extends BaseActuator {
       }
     } finally {
       // Restore original movements and sprint state
-      if (originalMovements) {
-        (this.bot as any).pathfinder.setMovements(originalMovements);
-        console.log('[MOVE] Restored safe movements');
-      }
+      (this.bot as any).pathfinder.setMovements(originalMovements);
+      console.log('[MOVE] Restored original movements');
       if (sprint) {
         this.bot.setControlState('sprint', false);
       }
     }
   }
 
-  private createUnsafeMovements(): any {
-    const { Movements } = require('mineflayer-pathfinder');
+  /**
+   * Create movements with buffer zone around hazards.
+   */
+  private createBufferedMovements(hazardPositions: Vec3[]): BufferedMovements {
+    const movements = new BufferedMovements(this.bot);
+    const mcData = require('minecraft-data')(this.bot.version);
+
+    movements.canDig = true;
+    movements.allowParkour = false;
+    movements.allowSprinting = true;
+
+    // Add standard hazard blocks to avoid
+    movements.blocksCantBreak.add(mcData.blocksByName.lava?.id);
+    movements.blocksToAvoid.add(mcData.blocksByName.lava?.id);
+    movements.blocksToAvoid.add(mcData.blocksByName.fire?.id);
+    movements.blocksToAvoid.add(mcData.blocksByName.cactus?.id);
+    movements.blocksToAvoid.add(mcData.blocksByName.magma_block?.id);
+
+    // Set up the buffer zone around hazards
+    movements.setDangerZone(hazardPositions, HAZARD_BUFFER_DISTANCE);
+
+    return movements;
+  }
+
+  private createUnsafeMovements(): Movements {
     const movements = new Movements(this.bot);
     movements.canDig = true;
-    movements.allowParkour = true;
+    movements.allowParkour = false;
     movements.allowSprinting = true;
     movements.blocksToAvoid.clear(); // Don't avoid lava/fire/cactus/magma
     return movements;
+  }
+
+  /**
+   * Scan for hazardous blocks (lava, fire, magma) within radius of the bot.
+   */
+  private scanForHazards(): Vec3[] {
+    const mcData = require('minecraft-data')(this.bot.version);
+    const hazardBlockNames = ['lava', 'fire', 'magma_block'];
+
+    const hazardBlockIds = hazardBlockNames
+      .map((name) => mcData.blocksByName[name]?.id)
+      .filter((id): id is number => id !== undefined);
+
+    if (hazardBlockIds.length === 0) return [];
+
+    const positions = this.bot.findBlocks({
+      matching: hazardBlockIds,
+      maxDistance: HAZARD_SCAN_RADIUS,
+      count: 100,
+    });
+
+    return positions;
   }
 
   cancel(): void {
