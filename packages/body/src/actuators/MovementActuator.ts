@@ -130,13 +130,9 @@ export class MovementActuator extends BaseActuator {
 
     const goal = new goals.GoalNear(x, y, z, range);
 
-    // Only allow sprinting in urgent/danger-ignoring mode
-    if (sprint && ignoreDanger) {
-      this.bot.setControlState('sprint', true);
-    } else {
-      // Explicitly disable sprint in safe mode to respect hazard buffer
-      this.bot.setControlState('sprint', false);
-    }
+    // Never sprint - in unsafe mode we want direct paths but walking pace
+    // to give the bot more control through hazards
+    this.bot.setControlState('sprint', false);
 
     // Retry logic for mineflayer-pathfinder flakiness.
     const maxAttempts = 3;
@@ -198,7 +194,7 @@ export class MovementActuator extends BaseActuator {
     const movements = new Movements(this.bot);
     movements.canDig = true;
     movements.allowParkour = false;
-    movements.allowSprinting = true;
+    movements.allowSprinting = false; // No sprinting - walk through hazards for better control
     movements.blocksToAvoid.clear(); // Don't avoid lava/fire/cactus/magma
     return movements;
   }
