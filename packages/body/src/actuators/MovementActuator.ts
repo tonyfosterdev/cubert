@@ -216,7 +216,7 @@ export class MovementActuator extends BaseActuator {
     const positions = this.bot.findBlocks({
       matching: hazardBlockIds,
       maxDistance: HAZARD_SCAN_RADIUS,
-      count: 100,
+      count: 10000,
     });
 
     return positions;
