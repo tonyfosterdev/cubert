@@ -191,11 +191,20 @@ export class MovementActuator extends BaseActuator {
   }
 
   private createUnsafeMovements(): Movements {
+    const mcData = require('minecraft-data')(this.bot.version);
     const movements = new Movements(this.bot);
     movements.canDig = true;
     movements.allowParkour = false;
     movements.allowSprinting = false; // No sprinting - walk through hazards for better control
     movements.blocksToAvoid.clear(); // Don't avoid lava/fire/cactus/magma
+
+    // Make lava less dangerous in pathfinding calculations
+    (movements as any).liquidCost = 0; // No cost penalty for traversing liquids
+    (movements as any).liquids.delete(mcData.blocksByName.lava.id); // Treat lava like air
+    if (mcData.blocksByName.flowing_lava) {
+      (movements as any).liquids.delete(mcData.blocksByName.flowing_lava.id);
+    }
+
     return movements;
   }
 
