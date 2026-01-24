@@ -14,11 +14,11 @@ fill -32 63 -32 31 63 31 stone
 # Floor is at Y=63, lava is at Y=64 (standing level)
 fill -5 64 -5 4 64 4 lava
 
-# Place chest for deposits (in a corner with room to access)
-setblock -28 64 -28 chest
+# Place chest for deposits (on negative X side of lava)
+setblock -15 64 0 chest
 
 # Put a pickaxe in the chest
-item replace block -28 64 -28 container.0 with iron_pickaxe 1
+item replace block -15 64 0 container.0 with iron_pickaxe 1
 
 # Set time and weather
 time set day
