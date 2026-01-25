@@ -1,7 +1,6 @@
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
-import { StateMachine } from '../state-machine/StateMachine';
-import { SensorData, Action, ActionEvent } from '../state-machine/State';
+import { SensorData, Action, ActionEvent } from '../types';
 import { ThoughtBrain } from '../brains';
 import { ChatMessage } from '../thought';
 import { BrainConfig } from '../config';
@@ -21,33 +20,20 @@ interface Brain {
 export class BrainServer {
   private config: BrainConfig;
   private server: grpc.Server;
-  private stateMachine: StateMachine | null = null;
-  private thoughtBrain: ThoughtBrain | null = null;
+  private thoughtBrain: ThoughtBrain;
   private brain: Brain;
 
-  constructor(config: BrainConfig, brainImpl: StateMachine | ThoughtBrain) {
+  constructor(config: BrainConfig, brainImpl: ThoughtBrain) {
     this.config = config;
     this.server = new grpc.Server();
-
-    // Detect brain type
-    if (brainImpl instanceof ThoughtBrain) {
-      this.thoughtBrain = brainImpl;
-      this.brain = {
-        onConnect: (data) => this.thoughtBrain!.onConnect(data),
-        onSensorUpdate: (data) => this.thoughtBrain!.onSensorUpdate(data),
-        onActionComplete: (event) => this.thoughtBrain!.onActionComplete(event),
-        onChatMessage: (chat) => this.thoughtBrain!.onChatMessage(chat),
-        reset: () => this.thoughtBrain!.reset(),
-      };
-    } else {
-      this.stateMachine = brainImpl;
-      this.brain = {
-        onConnect: async (data) => this.stateMachine!.update(data),
-        onSensorUpdate: async (data) => this.stateMachine!.update(data),
-        onActionComplete: async (event) => this.stateMachine!.handleEvent(event),
-        reset: () => this.stateMachine!.resetToSafeState(),
-      };
-    }
+    this.thoughtBrain = brainImpl;
+    this.brain = {
+      onConnect: (data) => this.thoughtBrain.onConnect(data),
+      onSensorUpdate: (data) => this.thoughtBrain.onSensorUpdate(data),
+      onActionComplete: (event) => this.thoughtBrain.onActionComplete(event),
+      onChatMessage: (chat) => this.thoughtBrain.onChatMessage(chat),
+      reset: () => this.thoughtBrain.reset(),
+    };
   }
 
   async start(): Promise<void> {

@@ -1,6 +1,5 @@
 import { defaultConfig } from './config';
 import { BrainServer } from './grpc/server';
-import { createGoldMiningStateMachine } from './state-machine/scenarios/gold-mining';
 import { ThoughtBrain } from './brains';
 import { startMetricsServer } from './metrics';
 
@@ -11,36 +10,15 @@ async function main() {
   // Start metrics server
   startMetricsServer(9092);
 
-  let brainImpl: ReturnType<typeof createGoldMiningStateMachine> | ThoughtBrain;
-
-  switch (defaultConfig.scenario) {
-    case 'gold-mining': {
-      // Create state machine for the configured scenario
-      const stateMachine = createGoldMiningStateMachine();
-
-      // Log state changes
-      stateMachine.on('stateChange', (newState: string) => {
-        console.log(`[${new Date().toISOString()}] [State] -> ${newState}`);
-      });
-
-      brainImpl = stateMachine;
-      break;
-    }
-
-    case 'thought':
-    case 'semi-autonomous': {
-      // Create thought brain for LLM-based command interpretation
-      brainImpl = new ThoughtBrain({
-        llm: defaultConfig.llm,
-      });
-      console.log(`LLM Model: ${defaultConfig.llm.model}`);
-      break;
-    }
-
-    default:
-      console.error(`Unknown scenario: ${defaultConfig.scenario}`);
-      process.exit(1);
+  if (defaultConfig.scenario !== 'thought' && defaultConfig.scenario !== 'semi-autonomous') {
+    console.error(`Unknown scenario: ${defaultConfig.scenario}`);
+    process.exit(1);
   }
+
+  const brainImpl = new ThoughtBrain({
+    llm: defaultConfig.llm,
+  });
+  console.log(`LLM Model: ${defaultConfig.llm.model}`);
 
   // Create and start gRPC server
   const server = new BrainServer(defaultConfig, brainImpl);
