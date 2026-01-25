@@ -50,11 +50,49 @@ export interface BlockInfo {
   distance: number;
 }
 
+export interface HazardConfig {
+  bufferDistance: number;
+  scanRadius: number;
+  scanCount: number;
+  verticalBufferMin: number;
+  verticalBufferMax: number;
+  hazardBlocks: string[];
+  blocksToAvoid: string[];
+  blocksCantBreak: string[];
+}
+
+export interface LiquidConfig {
+  treatAsAir: string[];
+  liquidCost: number;
+}
+
+export interface LocomotionConfig {
+  canDig: boolean;
+  allowParkour: boolean;
+  allowSprinting: boolean;
+}
+
+export interface PathfindingConfig {
+  goalRange: number;
+  maxAttempts: number;
+  retryDelayMs: number;
+}
+
+export interface MoveToPayload {
+  x: number;
+  y: number;
+  z: number;
+  hazards: HazardConfig;
+  liquids: LiquidConfig;
+  locomotion: LocomotionConfig;
+  pathfinding: PathfindingConfig;
+}
+
 export interface Action {
   actionId: string;
   timestamp: string;
   type: string;
-  moveTo?: { x: number; y: number; z: number; range: number; sprint: boolean };
+  moveTo?: MoveToPayload;
   mineBlock?: { x: number; y: number; z: number };
   depositItems?: { chestX: number; chestY: number; chestZ: number; itemNames: string[] };
   withdrawItems?: { chestX: number; chestY: number; chestZ: number; itemNames: string[]; count: number };

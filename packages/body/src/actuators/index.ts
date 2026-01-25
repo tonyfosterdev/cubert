@@ -1,6 +1,6 @@
 import { Bot } from 'mineflayer';
 import { EventEmitter } from 'events';
-import { MovementActuator } from './MovementActuator';
+import { MovementActuator, MoveToPayload } from './MovementActuator';
 import { MiningActuator } from './MiningActuator';
 import { InventoryActuator } from './InventoryActuator';
 import { ChatActuator } from './ChatActuator';
@@ -10,7 +10,7 @@ export interface Action {
   actionId: string;
   timestamp: string;
   type: string;
-  moveTo?: { x: number; y: number; z: number; range?: number; sprint?: boolean; ignoreDanger?: boolean };
+  moveTo?: MoveToPayload;
   mineBlock?: { x: number; y: number; z: number };
   depositItems?: { chestX: number; chestY: number; chestZ: number; itemNames?: string[] };
   withdrawItems?: { chestX: number; chestY: number; chestZ: number; itemNames?: string[]; count?: number };

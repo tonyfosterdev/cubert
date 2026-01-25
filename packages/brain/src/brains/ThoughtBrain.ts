@@ -12,6 +12,66 @@ import { LLMInterpreter, ToolCall, LLMConfig, ToolResolver } from '../llm';
 import { CommandQueue, Command } from '../command';
 import { thoughtsProcessedTotal, commandsQueuedTotal, commandQueueLength } from '../metrics';
 
+/**
+ * Movement profiles define all pathfinding parameters.
+ * Brain selects a profile based on context, body just executes the params.
+ */
+const MOVEMENT_PROFILES = {
+  safe: {
+    hazards: {
+      bufferDistance: 5,
+      scanRadius: 32,
+      scanCount: 10000,
+      verticalBufferMin: -2,
+      verticalBufferMax: 2,
+      hazardBlocks: ['lava', 'flowing_lava', 'fire', 'magma_block'],
+      blocksToAvoid: ['lava', 'flowing_lava', 'fire', 'cactus', 'magma_block'],
+      blocksCantBreak: ['lava', 'flowing_lava'],
+    },
+    liquids: {
+      treatAsAir: [],
+      liquidCost: 100,
+    },
+    locomotion: {
+      canDig: true,
+      allowParkour: false,
+      allowSprinting: false,
+    },
+    pathfinding: {
+      goalRange: 2,
+      maxAttempts: 3,
+      retryDelayMs: 500,
+    },
+  },
+
+  unsafe: {
+    hazards: {
+      bufferDistance: 0,
+      scanRadius: 0,
+      scanCount: 0,
+      verticalBufferMin: 0,
+      verticalBufferMax: 0,
+      hazardBlocks: [],
+      blocksToAvoid: [],
+      blocksCantBreak: [],
+    },
+    liquids: {
+      treatAsAir: ['lava', 'flowing_lava'],
+      liquidCost: 0,
+    },
+    locomotion: {
+      canDig: true,
+      allowParkour: false,
+      allowSprinting: false,
+    },
+    pathfinding: {
+      goalRange: 2,
+      maxAttempts: 3,
+      retryDelayMs: 500,
+    },
+  },
+};
+
 export interface ThoughtBrainConfig {
   llm: LLMConfig;
 }
@@ -290,6 +350,9 @@ export class ThoughtBrain {
       return this.createSpeakAction(`I can't find ${target}.`);
     }
 
+    // Select movement profile based on urgency
+    const profile = urgent ? MOVEMENT_PROFILES.unsafe : MOVEMENT_PROFILES.safe;
+
     return {
       actionId: uuidv4(),
       timestamp: Date.now().toString(),
@@ -298,9 +361,7 @@ export class ThoughtBrain {
         x: position.x,
         y: position.y,
         z: position.z,
-        range: 2,
-        sprint: urgent || false,
-        ignoreDanger: urgent || false,
+        ...profile,
       },
     };
   }

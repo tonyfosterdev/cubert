@@ -179,9 +179,39 @@ message MoveToAction {
   int32 x = 1;
   int32 y = 2;
   int32 z = 3;
-  int32 range = 4;                    // How close to get (default 1)
-  bool sprint = 5;
-  bool ignore_danger = 6;             // If true, ignore hazards like lava
+
+  HazardConfig hazards = 4;
+  LiquidConfig liquids = 5;
+  LocomotionConfig locomotion = 6;
+  PathfindingConfig pathfinding = 7;
+}
+
+message HazardConfig {
+  int32 buffer_distance = 1;
+  int32 scan_radius = 2;
+  int32 scan_count = 3;
+  int32 vertical_buffer_min = 4;
+  int32 vertical_buffer_max = 5;
+  repeated string hazard_blocks = 6;
+  repeated string blocks_to_avoid = 7;
+  repeated string blocks_cant_break = 8;
+}
+
+message LiquidConfig {
+  repeated string treat_as_air = 1;
+  int32 liquid_cost = 2;
+}
+
+message LocomotionConfig {
+  bool can_dig = 1;
+  bool allow_parkour = 2;
+  bool allow_sprinting = 3;
+}
+
+message PathfindingConfig {
+  int32 goal_range = 1;
+  int32 max_attempts = 2;
+  int32 retry_delay_ms = 3;
 }
 
 message MineBlockAction {

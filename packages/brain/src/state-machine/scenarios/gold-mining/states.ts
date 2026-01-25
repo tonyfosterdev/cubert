@@ -1,6 +1,37 @@
 import { State, StateContext, Action, SensorData, BlockInfo, ActionEvent } from '../../State';
 import { v4 as uuidv4 } from 'uuid';
 
+/**
+ * Safe movement profile for state machine navigation.
+ * Maintains buffer distance from hazards like lava.
+ */
+const SAFE_MOVEMENT_PROFILE = {
+  hazards: {
+    bufferDistance: 5,
+    scanRadius: 32,
+    scanCount: 10000,
+    verticalBufferMin: -2,
+    verticalBufferMax: 2,
+    hazardBlocks: ['lava', 'flowing_lava', 'fire', 'magma_block'],
+    blocksToAvoid: ['lava', 'flowing_lava', 'fire', 'cactus', 'magma_block'],
+    blocksCantBreak: ['lava', 'flowing_lava'],
+  },
+  liquids: {
+    treatAsAir: [],
+    liquidCost: 100,
+  },
+  locomotion: {
+    canDig: true,
+    allowParkour: false,
+    allowSprinting: false,
+  },
+  pathfinding: {
+    goalRange: 2,
+    maxAttempts: 3,
+    retryDelayMs: 500,
+  },
+};
+
 function createAction(type: string, payload: Partial<Action>): Action {
   return {
     actionId: uuidv4(),
@@ -115,7 +146,13 @@ export const MovingToGoldState: State = {
     if (!target) return null;
 
     const action = createAction('ACTION_TYPE_MOVE_TO', {
-      moveTo: { x: target.x, y: target.y, z: target.z, range: 3, sprint: false },
+      moveTo: {
+        x: target.x,
+        y: target.y,
+        z: target.z,
+        ...SAFE_MOVEMENT_PROFILE,
+        pathfinding: { ...SAFE_MOVEMENT_PROFILE.pathfinding, goalRange: 3 },
+      },
     });
     context.memory.set('pendingActionId', action.actionId);
     console.log(`[${new Date().toISOString()}] Moving to gold at (${target.x}, ${target.y}, ${target.z})`);
@@ -238,7 +275,13 @@ export const MiningState: State = {
     // Walk to the mined block position to collect dropped items
     if (minedPos) {
       const moveAction = createAction('ACTION_TYPE_MOVE_TO', {
-        moveTo: { x: minedPos.x, y: minedPos.y, z: minedPos.z, range: 0, sprint: false },
+        moveTo: {
+          x: minedPos.x,
+          y: minedPos.y,
+          z: minedPos.z,
+          ...SAFE_MOVEMENT_PROFILE,
+          pathfinding: { ...SAFE_MOVEMENT_PROFILE.pathfinding, goalRange: 0 },
+        },
       });
       context.memory.set('collectMoveId', moveAction.actionId);
       console.log(`[${new Date().toISOString()}] Walking to collect dropped items at (${minedPos.x}, ${minedPos.y}, ${minedPos.z})`);
@@ -300,7 +343,12 @@ export const MovingToChestState: State = {
     if (!target) return null;
 
     const action = createAction('ACTION_TYPE_MOVE_TO', {
-      moveTo: { x: target.x, y: target.y, z: target.z, range: 2, sprint: false },
+      moveTo: {
+        x: target.x,
+        y: target.y,
+        z: target.z,
+        ...SAFE_MOVEMENT_PROFILE,
+      },
     });
     context.memory.set('pendingActionId', action.actionId);
     console.log(`[${new Date().toISOString()}] Moving to chest at (${target.x}, ${target.y}, ${target.z})`);

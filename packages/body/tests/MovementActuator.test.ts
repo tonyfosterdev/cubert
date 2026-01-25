@@ -1,9 +1,65 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Vec3 } from 'vec3';
 
-// Constants matching MovementActuator.ts
-const HAZARD_BUFFER_DISTANCE = 5;
-const HAZARD_SCAN_RADIUS = 32;
+// Default safe movement profile parameters (matching brain's MOVEMENT_PROFILES.safe)
+const SAFE_PROFILE = {
+  hazards: {
+    bufferDistance: 5,
+    scanRadius: 32,
+    scanCount: 10000,
+    verticalBufferMin: -2,
+    verticalBufferMax: 2,
+    hazardBlocks: ['lava', 'flowing_lava', 'fire', 'magma_block'],
+    blocksToAvoid: ['lava', 'flowing_lava', 'fire', 'cactus', 'magma_block'],
+    blocksCantBreak: ['lava', 'flowing_lava'],
+  },
+  liquids: {
+    treatAsAir: [],
+    liquidCost: 100,
+  },
+  locomotion: {
+    canDig: true,
+    allowParkour: false,
+    allowSprinting: false,
+  },
+  pathfinding: {
+    goalRange: 2,
+    maxAttempts: 3,
+    retryDelayMs: 500,
+  },
+};
+
+// Unsafe movement profile parameters (matching brain's MOVEMENT_PROFILES.unsafe)
+const UNSAFE_PROFILE = {
+  hazards: {
+    bufferDistance: 0,
+    scanRadius: 0,
+    scanCount: 0,
+    verticalBufferMin: 0,
+    verticalBufferMax: 0,
+    hazardBlocks: [],
+    blocksToAvoid: [],
+    blocksCantBreak: [],
+  },
+  liquids: {
+    treatAsAir: ['lava', 'flowing_lava'],
+    liquidCost: 0,
+  },
+  locomotion: {
+    canDig: true,
+    allowParkour: false,
+    allowSprinting: false,
+  },
+  pathfinding: {
+    goalRange: 2,
+    maxAttempts: 3,
+    retryDelayMs: 500,
+  },
+};
+
+// Derived constants for algorithm tests
+const HAZARD_BUFFER_DISTANCE = SAFE_PROFILE.hazards.bufferDistance;
+const HAZARD_SCAN_RADIUS = SAFE_PROFILE.hazards.scanRadius;
 const SAFE_HOP_DISTANCE = HAZARD_SCAN_RADIUS - HAZARD_BUFFER_DISTANCE; // 27 blocks
 
 /**
@@ -178,18 +234,29 @@ describe('Safe Movement Hop Algorithm', () => {
     });
   });
 
-  describe('constants', () => {
-    it('SAFE_HOP_DISTANCE is HAZARD_SCAN_RADIUS minus HAZARD_BUFFER_DISTANCE', () => {
+  describe('profile constants', () => {
+    it('SAFE_HOP_DISTANCE is scanRadius minus bufferDistance', () => {
       expect(SAFE_HOP_DISTANCE).toBe(27);
       expect(SAFE_HOP_DISTANCE).toBe(HAZARD_SCAN_RADIUS - HAZARD_BUFFER_DISTANCE);
     });
 
-    it('buffer distance ensures bot stays 5 blocks from hazards', () => {
-      expect(HAZARD_BUFFER_DISTANCE).toBe(5);
+    it('safe profile buffer distance ensures bot stays 5 blocks from hazards', () => {
+      expect(SAFE_PROFILE.hazards.bufferDistance).toBe(5);
     });
 
-    it('scan radius covers 32 blocks', () => {
-      expect(HAZARD_SCAN_RADIUS).toBe(32);
+    it('safe profile scan radius covers 32 blocks', () => {
+      expect(SAFE_PROFILE.hazards.scanRadius).toBe(32);
+    });
+
+    it('unsafe profile has no buffer or scanning', () => {
+      expect(UNSAFE_PROFILE.hazards.bufferDistance).toBe(0);
+      expect(UNSAFE_PROFILE.hazards.scanRadius).toBe(0);
+      expect(UNSAFE_PROFILE.hazards.scanCount).toBe(0);
+    });
+
+    it('unsafe profile treats lava as air', () => {
+      expect(UNSAFE_PROFILE.liquids.treatAsAir).toContain('lava');
+      expect(UNSAFE_PROFILE.liquids.treatAsAir).toContain('flowing_lava');
     });
   });
 });
@@ -231,8 +298,8 @@ describe('MovementActuator Integration', () => {
   });
 
   describe('safe movement execution', () => {
-    it('scans for hazards at each hop', async () => {
-      // Simulate the algorithm manually since we can't easily import the actuator
+    it('scans for hazards when scanRadius > 0', async () => {
+      // Simulate the algorithm with safe profile
       const destination = new Vec3(60, 64, 0);
       let currentPos = mockBot.entity.position.clone();
       let hopCount = 0;
@@ -241,8 +308,12 @@ describe('MovementActuator Integration', () => {
       while (hopCount < maxHops) {
         hopCount++;
 
-        // Scan for hazards (this is what the actuator does)
-        mockBot.findBlocks({ matching: [], maxDistance: HAZARD_SCAN_RADIUS, count: 100 });
+        // Scan for hazards (what the actuator does with safe profile)
+        mockBot.findBlocks({
+          matching: [],
+          maxDistance: SAFE_PROFILE.hazards.scanRadius,
+          count: SAFE_PROFILE.hazards.scanCount,
+        });
 
         const distanceToGoal = currentPos.distanceTo(destination);
         if (distanceToGoal <= SAFE_HOP_DISTANCE) {
@@ -255,6 +326,13 @@ describe('MovementActuator Integration', () => {
 
       // 60 blocks = 3 hops, so 3 scans
       expect(hazardScanCount).toBe(3);
+    });
+
+    it('does not scan for hazards with unsafe profile (scanRadius=0)', () => {
+      // With unsafe profile, no scanning should occur
+      const shouldScan =
+        UNSAFE_PROFILE.hazards.scanRadius > 0 && UNSAFE_PROFILE.hazards.bufferDistance > 0;
+      expect(shouldScan).toBe(false);
     });
 
     it('uses buffered movements when hazards are found', () => {
@@ -274,7 +352,7 @@ describe('MovementActuator Integration', () => {
       const hazards = mockBot.findBlocks();
       expect(hazards.length).toBe(0);
 
-      // In the real implementation, this would trigger createDefaultSafeMovements
+      // In the real implementation, this would use standard Movements
     });
   });
 
@@ -303,12 +381,14 @@ describe('MovementActuator Integration', () => {
 describe('BufferedMovements danger zone', () => {
   it('creates danger zone with correct size for single hazard', () => {
     const hazardPositions = [new Vec3(10, 64, 10)];
-    const bufferDistance = HAZARD_BUFFER_DISTANCE;
+    const bufferDistance = SAFE_PROFILE.hazards.bufferDistance;
+    const verticalMin = SAFE_PROFILE.hazards.verticalBufferMin;
+    const verticalMax = SAFE_PROFILE.hazards.verticalBufferMax;
 
     // Calculate expected danger zone size
-    // For each hazard: (2*buffer+1)^2 horizontally * 5 vertically (dy from -2 to 2)
+    // For each hazard: (2*buffer+1)^2 horizontally * verticalRange vertically
     const horizontalSize = (2 * bufferDistance + 1) ** 2;
-    const verticalSize = 5; // -2 to 2
+    const verticalSize = verticalMax - verticalMin + 1; // -2 to 2 = 5
     const expectedSize = horizontalSize * verticalSize;
 
     // (11 * 11) * 5 = 605 positions per hazard
@@ -317,11 +397,11 @@ describe('BufferedMovements danger zone', () => {
 
   it('buffer zone extends 5 blocks in all horizontal directions', () => {
     const hazard = new Vec3(50, 64, 50);
-    const buffer = HAZARD_BUFFER_DISTANCE;
+    const buffer = SAFE_PROFILE.hazards.bufferDistance;
 
     // Positions that should be in danger zone
     const inZone = [
-      new Vec3(50, 64, 50),     // hazard itself
+      new Vec3(50, 64, 50), // hazard itself
       new Vec3(50 + 5, 64, 50), // 5 blocks east
       new Vec3(50 - 5, 64, 50), // 5 blocks west
       new Vec3(50, 64, 50 + 5), // 5 blocks south
@@ -346,5 +426,50 @@ describe('BufferedMovements danger zone', () => {
       const dz = Math.abs(pos.z - hazard.z);
       expect(dx <= buffer && dz <= buffer).toBe(false);
     }
+  });
+});
+
+describe('MoveToPayload format', () => {
+  it('safe profile payload has all required fields', () => {
+    const payload = {
+      x: 100,
+      y: 64,
+      z: -200,
+      ...SAFE_PROFILE,
+    };
+
+    // Verify structure
+    expect(payload.hazards).toBeDefined();
+    expect(payload.hazards.bufferDistance).toBe(5);
+    expect(payload.hazards.scanRadius).toBe(32);
+    expect(payload.hazards.hazardBlocks).toContain('lava');
+
+    expect(payload.liquids).toBeDefined();
+    expect(payload.liquids.liquidCost).toBe(100);
+
+    expect(payload.locomotion).toBeDefined();
+    expect(payload.locomotion.canDig).toBe(true);
+    expect(payload.locomotion.allowSprinting).toBe(false);
+
+    expect(payload.pathfinding).toBeDefined();
+    expect(payload.pathfinding.goalRange).toBe(2);
+    expect(payload.pathfinding.maxAttempts).toBe(3);
+  });
+
+  it('unsafe profile payload allows traversing lava', () => {
+    const payload = {
+      x: 100,
+      y: 64,
+      z: -200,
+      ...UNSAFE_PROFILE,
+    };
+
+    // No hazard avoidance
+    expect(payload.hazards.bufferDistance).toBe(0);
+    expect(payload.hazards.blocksToAvoid).toHaveLength(0);
+
+    // Lava treated as air
+    expect(payload.liquids.treatAsAir).toContain('lava');
+    expect(payload.liquids.liquidCost).toBe(0);
   });
 });
