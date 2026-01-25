@@ -11,12 +11,13 @@ import { Thought, ChatMessage, createChatThought } from '../thought';
 import { LLMInterpreter, ToolCall, LLMConfig, ToolResolver } from '../llm';
 import { CommandQueue, Command } from '../command';
 import { thoughtsProcessedTotal, commandsQueuedTotal, commandQueueLength } from '../metrics';
+import { logger } from '../logger';
 
 /**
  * Movement profiles define all pathfinding parameters.
  * Brain selects a profile based on context, body just executes the params.
  */
-const MOVEMENT_PROFILES = {
+export const MOVEMENT_PROFILES = {
   safe: {
     hazards: {
       bufferDistance: 5,
@@ -89,7 +90,7 @@ export class ThoughtBrain {
   }
 
   async onConnect(initialData: SensorData): Promise<Action[]> {
-    console.log('[ThoughtBrain] Connected');
+    logger.info('ThoughtBrain connected');
     this.sensors = initialData;
     this.commandQueue.clearAll();
     this.thoughtQueue = [];
@@ -118,7 +119,7 @@ export class ThoughtBrain {
   }
 
   async onActionComplete(event: ActionEvent): Promise<Action[]> {
-    console.log(`[ThoughtBrain] Action complete: ${event.actionId} -> ${event.result}`);
+    logger.info({ actionId: event.actionId, result: event.result }, 'Action complete');
 
     // Mark command as complete
     this.commandQueue.complete(event.actionId);
@@ -148,7 +149,7 @@ export class ThoughtBrain {
   }
 
   async onChatMessage(chat: ChatMessage): Promise<Action[]> {
-    console.log(`[ThoughtBrain] Chat from ${chat.sender}: "${chat.message}"`);
+    logger.info({ sender: chat.sender, message: chat.message }, 'Chat received');
 
     const thought = createChatThought(chat);
     this.thoughtQueue.push(thought);
@@ -207,7 +208,7 @@ export class ThoughtBrain {
 
       return actions;
     } catch (error) {
-      console.error('[ThoughtBrain] Error processing thought:', error);
+      logger.error({ err: error }, 'Error processing thought');
       this.isProcessing = false;
       return [this.createSpeakAction('Sorry, something went wrong.')];
     }
@@ -215,7 +216,7 @@ export class ThoughtBrain {
 
   private rememberLocation(name: string, coords: { x: number; y: number; z: number }): void {
     this.rememberedLocations.set(name.toLowerCase(), coords);
-    console.log(`[ThoughtBrain] Remembered ${name} at (${coords.x}, ${coords.y}, ${coords.z})`);
+    logger.info({ name, coords }, 'Remembered location');
   }
 
   private convertToolCallsToCommands(toolCalls: ToolCall[]): Command[] {
@@ -252,7 +253,7 @@ export class ThoughtBrain {
   }
 
   private handleStopCommand(interrupt?: boolean): void {
-    console.log('[ThoughtBrain] Stop command received');
+    logger.info({ interrupt }, 'Stop command received');
 
     // Clear all pending commands
     this.commandQueue.clear();
@@ -262,7 +263,7 @@ export class ThoughtBrain {
     if (interrupt && this.commandQueue.hasInProgress()) {
       const currentActionId = this.commandQueue.getCurrentActionId();
       if (currentActionId) {
-        console.log(`[ThoughtBrain] Cancelling current action: ${currentActionId}`);
+        logger.info({ actionId: currentActionId }, 'Cancelling current action');
         // Create a cancel action - this will be emitted immediately
         this.pendingCancelAction = this.createCancelAction(currentActionId);
       }
@@ -329,7 +330,7 @@ export class ThoughtBrain {
         return this.createIdleAction(call.args.duration_ms || 1000);
 
       default:
-        console.warn(`[ThoughtBrain] Unknown tool: ${call.tool}`);
+        logger.warn({ tool: call.tool }, 'Unknown tool');
         return null;
     }
   }
@@ -346,7 +347,7 @@ export class ThoughtBrain {
   private createMoveToAction(target: string, urgent?: boolean): Action | null {
     const position = this.resolveTarget(target);
     if (!position) {
-      console.warn(`[ThoughtBrain] Could not resolve target: ${target}`);
+      logger.warn({ target }, 'Could not resolve move target');
       return this.createSpeakAction(`I can't find ${target}.`);
     }
 
@@ -369,7 +370,7 @@ export class ThoughtBrain {
   private createMineBlockAction(target: string): Action | null {
     const position = this.resolveMineTarget(target);
     if (!position) {
-      console.warn(`[ThoughtBrain] Could not resolve mine target: ${target}`);
+      logger.warn({ target }, 'Could not resolve mine target');
       return this.createSpeakAction(`I can't find any ${target} to mine.`);
     }
 
@@ -453,7 +454,7 @@ export class ThoughtBrain {
     }
 
     if (result.error) {
-      console.warn(`[ThoughtBrain] ${result.error}`);
+      logger.warn({ error: result.error }, 'Target resolution error');
     }
     return null;
   }
@@ -467,7 +468,7 @@ export class ThoughtBrain {
     }
 
     if (result.error) {
-      console.warn(`[ThoughtBrain] ${result.error}`);
+      logger.warn({ error: result.error }, 'Mine target resolution error');
     }
     return null;
   }
@@ -479,7 +480,7 @@ export class ThoughtBrain {
     this.isProcessing = false;
     this.pendingCancelAction = null;
     this.rememberedLocations.clear();
-    console.log('[ThoughtBrain] Reset');
+    logger.info('ThoughtBrain reset');
   }
 
   /**
