@@ -31,40 +31,31 @@ Cubert is a modular Minecraft bot system designed with a clean separation betwee
 ```mermaid
 graph TB
     subgraph Docker["Docker Environment"]
-        MC[("Minecraft Server<br/>:25565 / :25575")]
-        SR["Scenario Runner<br/>(RCON)"]
-    end
-
-    subgraph Body["Body Service"]
-        BM["BotManager<br/>(Mineflayer)"]
-        subgraph Sensors
-            PS["PositionSensor"]
-            BS["BlockSensor"]
-            IS["InventorySensor"]
-            HS["HealthSensor"]
-            PLS["PlayerSensor"]
+        subgraph MinecraftLayer["Minecraft"]
+            MC[("Minecraft Server<br/>:25565 / :25575")]
+            SR["Scenario Runner<br/>(RCON)"]
         end
-        subgraph Actuators
-            MA["MovementActuator"]
-            MIA["MiningActuator"]
-            IA["InventoryActuator"]
-            CA["ChatActuator"]
+
+        subgraph Body["Body Service"]
+            BM["BotManager<br/>(Mineflayer)"]
+            Sensors["Sensors<br/>(Position, Block, Inventory,<br/>Health, Player)"]
+            Actuators["Actuators<br/>(Movement, Mining,<br/>Inventory, Chat)"]
+            BC["BrainClient<br/>(gRPC)"]
+            BMetrics[("Metrics :9091")]
         end
-        BC["BrainClient<br/>(gRPC)"]
-        BMetrics[("Metrics :9091")]
-    end
 
-    subgraph Brain["Brain Service"]
-        BS2["BrainServer<br/>(gRPC :5000)"]
-        TB["ThoughtBrain"]
-        LLM["LLMInterpreter<br/>(Claude API)"]
-        CQ["CommandQueue"]
-        BrMetrics[("Metrics :9092")]
-    end
+        subgraph Brain["Brain Service"]
+            BS2["BrainServer<br/>(gRPC :5000)"]
+            TB["ThoughtBrain"]
+            LLM["LLMInterpreter<br/>(Claude API)"]
+            CQ["CommandQueue"]
+            BrMetrics[("Metrics :9092")]
+        end
 
-    subgraph Observability
-        PROM[("Prometheus<br/>:9090")]
-        GRAF[("Grafana<br/>:3000")]
+        subgraph Observability
+            PROM[("Prometheus<br/>:9090")]
+            GRAF[("Grafana<br/>:3000")]
+        end
     end
 
     MC <--> BM
@@ -76,8 +67,8 @@ graph TB
     BS2 -->|Actions| BC
     BC --> Actuators
     BS2 --> TB
-    TB --> LLM
-    LLM --> CQ
+    TB <--> LLM
+    TB --> CQ
     CQ --> BS2
     BMetrics --> PROM
     BrMetrics --> PROM
