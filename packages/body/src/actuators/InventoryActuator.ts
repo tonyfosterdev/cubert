@@ -2,6 +2,7 @@ import { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { BaseActuator } from './BaseActuator';
 import { goldChest } from '../metrics';
+import { logger } from '../logger';
 
 export interface DepositItemsPayload {
   chestX: number;
@@ -46,12 +47,12 @@ export class InventoryActuator extends BaseActuator {
       const botPos = this.bot.entity.position;
       const distance = botPos.distanceTo(position);
       if (distance > 4.5) {
-        console.log(`[DEPOSIT] Too far from chest (${distance.toFixed(1)} blocks)`);
+        logger.warn({ distance: distance.toFixed(1) }, 'Too far from chest for deposit');
         this.complete(actionId, false, `Too far from chest (${distance.toFixed(1)} blocks)`);
         return;
       }
 
-      console.log(`[DEPOSIT] Opening chest at ${position}`);
+      logger.info({ position: { x: position.x, y: position.y, z: position.z } }, 'Opening chest for deposit');
       const chest = await this.bot.openContainer(chestBlock);
 
       // Get items to deposit
@@ -66,7 +67,7 @@ export class InventoryActuator extends BaseActuator {
           await chest.deposit(item.type, item.metadata, item.count);
         } catch (err) {
           // Chest might be full, continue with other items
-          console.warn(`Could not deposit ${item.name}:`, err);
+          logger.warn({ err, item: item.name }, 'Could not deposit item');
         }
       }
 
@@ -75,7 +76,7 @@ export class InventoryActuator extends BaseActuator {
         .filter(item => item.name === 'raw_gold')
         .reduce((sum, item) => sum + item.count, 0);
       goldChest.set(chestGold);
-      console.log(`[DEPOSIT] Chest now contains ${chestGold} raw gold`);
+      logger.info({ rawGold: chestGold }, 'Chest gold count after deposit');
 
       chest.close();
       this.complete(actionId, true);
@@ -103,12 +104,12 @@ export class InventoryActuator extends BaseActuator {
       const botPos = this.bot.entity.position;
       const distance = botPos.distanceTo(position);
       if (distance > 4.5) {
-        console.log(`[WITHDRAW] Too far from chest (${distance.toFixed(1)} blocks)`);
+        logger.warn({ distance: distance.toFixed(1) }, 'Too far from chest for withdraw');
         this.complete(actionId, false, `Too far from chest (${distance.toFixed(1)} blocks)`);
         return;
       }
 
-      console.log(`[WITHDRAW] Opening chest at ${position}`);
+      logger.info({ position: { x: position.x, y: position.y, z: position.z } }, 'Opening chest for withdraw');
       const chest = await this.bot.openContainer(chestBlock);
 
       // Get items in chest
@@ -127,14 +128,14 @@ export class InventoryActuator extends BaseActuator {
             : item.count;
           await chest.withdraw(item.type, item.metadata, withdrawAmount);
           withdrawnCount += withdrawAmount;
-          console.log(`[WITHDRAW] Took ${withdrawAmount}x ${item.name} from chest`);
+          logger.debug({ amount: withdrawAmount, item: item.name }, 'Withdrew item from chest');
         } catch (err) {
           // Inventory might be full, continue with other items
-          console.warn(`Could not withdraw ${item.name}:`, err);
+          logger.warn({ err, item: item.name }, 'Could not withdraw item');
         }
       }
 
-      console.log(`[WITHDRAW] Withdrew ${withdrawnCount} item(s) total`);
+      logger.info({ totalItems: withdrawnCount }, 'Withdraw complete');
 
       chest.close();
       this.complete(actionId, true);

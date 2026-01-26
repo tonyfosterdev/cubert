@@ -2,6 +2,7 @@ import { Bot } from 'mineflayer';
 import { goals, Movements } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { BaseActuator } from './BaseActuator';
+import { logger } from '../logger';
 
 /**
  * Custom Movements class that creates a buffer zone around hazards.
@@ -33,7 +34,7 @@ class BufferedMovements extends Movements {
       }
     }
 
-    console.log(`[MOVE] Created danger zone with ${this.dangerZone.size} blocked positions`);
+    logger.debug({ blockedPositions: this.dangerZone.size }, 'Created danger zone');
   }
 
   /**
@@ -133,10 +134,13 @@ export class MovementActuator extends BaseActuator {
 
     const { x, y, z, hazards, liquids, locomotion, pathfinding } = payload;
     const botPos = this.bot.entity.position;
-    console.log(
-      `[MOVE] Starting move from (${botPos.x.toFixed(1)}, ${botPos.y.toFixed(1)}, ${botPos.z.toFixed(1)}) to (${x}, ${y}, ${z})`
-    );
-    console.log(`[MOVE] Config: buffer=${hazards.bufferDistance}, scanRadius=${hazards.scanRadius}, sprint=${locomotion.allowSprinting}`);
+    logger.info({
+      from: { x: botPos.x.toFixed(1), y: botPos.y.toFixed(1), z: botPos.z.toFixed(1) },
+      to: { x, y, z },
+      buffer: hazards.bufferDistance,
+      scanRadius: hazards.scanRadius,
+      sprint: locomotion.allowSprinting,
+    }, 'Starting movement');
 
     // Store original movements to restore later
     const originalMovements = (this.bot as any).pathfinder.movements;
@@ -155,13 +159,13 @@ export class MovementActuator extends BaseActuator {
         try {
           await new Promise((resolve) => setTimeout(resolve, pathfinding.retryDelayMs));
           await (this.bot as any).pathfinder.goto(goal);
-          console.log(`[MOVE] Reached goal (${x}, ${y}, ${z})`);
+          logger.info({ goal: { x, y, z } }, 'Reached goal');
           if (this.currentActionId === actionId) {
             this.complete(actionId, true);
           }
           return;
         } catch (err: any) {
-          console.log(`[MOVE] Attempt ${attempt}/${pathfinding.maxAttempts} failed: ${err.message}`);
+          logger.warn({ attempt, maxAttempts: pathfinding.maxAttempts, error: err.message }, 'Movement attempt failed');
           if (attempt === pathfinding.maxAttempts) {
             this.complete(actionId, false, err.message);
           }
@@ -171,7 +175,7 @@ export class MovementActuator extends BaseActuator {
       // Restore original movements and sprint state
       (this.bot as any).pathfinder.setMovements(originalMovements);
       this.bot.setControlState('sprint', false);
-      console.log('[MOVE] Restored original movements');
+      logger.debug('Restored original movements');
     }
   }
 
@@ -191,9 +195,7 @@ export class MovementActuator extends BaseActuator {
       // Scan for hazards and create buffered movements
       const hazardPositions = this.scanForHazards(hazards);
       if (hazardPositions.length > 0) {
-        console.log(
-          `[MOVE] Found ${hazardPositions.length} hazard blocks, maintaining ${hazards.bufferDistance}-block buffer`
-        );
+        logger.info({ hazardCount: hazardPositions.length, buffer: hazards.bufferDistance }, 'Found hazard blocks');
         const bufferedMovements = new BufferedMovements(this.bot);
         bufferedMovements.setDangerZone(
           hazardPositions,

@@ -4,6 +4,7 @@ import { EventEmitter } from 'events';
 import { BodyConfig } from '../config';
 import { SensorData } from '../sensors';
 import { Action } from '../actuators';
+import { logger } from '../logger';
 
 export interface ActionEvent {
   actionId: string;
@@ -47,7 +48,7 @@ export class BrainClient extends EventEmitter {
       const BrainService = protoDescriptor.cubert.BrainService;
 
       const address = `${this.config.grpc.brainHost}:${this.config.grpc.brainPort}`;
-      console.log(`Connecting to brain at ${address}...`);
+      logger.info({ address }, 'Connecting to brain');
 
       this.client = new BrainService(address, grpc.credentials.createInsecure());
 
@@ -57,7 +58,7 @@ export class BrainClient extends EventEmitter {
 
       this.client.waitForReady(deadline, (err: Error | undefined) => {
         if (err) {
-          console.error('Failed to connect to brain:', err);
+          logger.error({ err }, 'Failed to connect to brain');
           this.scheduleReconnect();
           reject(err);
           return;
@@ -66,7 +67,7 @@ export class BrainClient extends EventEmitter {
         this.setupStream();
         this.connected = true;
         this.reconnectAttempts = 0;
-        console.log('Connected to brain!');
+        logger.info('Connected to brain!');
         resolve();
       });
     });
@@ -80,13 +81,13 @@ export class BrainClient extends EventEmitter {
     });
 
     this.stream!.on('error', (err: Error) => {
-      console.error('Stream error:', err);
+      logger.error({ err }, 'Stream error');
       this.connected = false;
       this.scheduleReconnect();
     });
 
     this.stream!.on('end', () => {
-      console.log('Stream ended');
+      logger.info('Stream ended');
       this.connected = false;
       this.scheduleReconnect();
     });
@@ -107,7 +108,7 @@ export class BrainClient extends EventEmitter {
     try {
       this.stream.write(message);
     } catch (err) {
-      console.error('Failed to send sensor data:', err);
+      logger.error({ err }, 'Failed to send sensor data');
     }
   }
 
@@ -129,7 +130,7 @@ export class BrainClient extends EventEmitter {
     try {
       this.stream.write(message);
     } catch (err) {
-      console.error('Failed to send action event:', err);
+      logger.error({ err }, 'Failed to send action event');
     }
   }
 
@@ -147,9 +148,9 @@ export class BrainClient extends EventEmitter {
 
     try {
       this.stream.write(message);
-      console.log('[CONNECT] Sent connect event to brain');
+      logger.info('Sent connect event to brain');
     } catch (err) {
-      console.error('Failed to send connect event:', err);
+      logger.error({ err }, 'Failed to send connect event');
     }
   }
 
@@ -168,9 +169,9 @@ export class BrainClient extends EventEmitter {
 
     try {
       this.stream.write(message);
-      console.log(`[CHAT] Sent chat message to brain: "${chat.message}"`);
+      logger.debug({ message: chat.message }, 'Sent chat message to brain');
     } catch (err) {
-      console.error('Failed to send chat message:', err);
+      logger.error({ err }, 'Failed to send chat message');
     }
   }
 
@@ -230,7 +231,7 @@ export class BrainClient extends EventEmitter {
       this.config.grpc.maxReconnectAttempts !== -1 &&
       this.reconnectAttempts >= this.config.grpc.maxReconnectAttempts
     ) {
-      console.error('Max reconnection attempts reached');
+      logger.error('Max reconnection attempts reached');
       return;
     }
 
@@ -240,7 +241,7 @@ export class BrainClient extends EventEmitter {
       30000
     );
 
-    console.log(`Reconnecting to brain in ${delay}ms (attempt ${this.reconnectAttempts})...`);
+    logger.info({ delayMs: delay, attempt: this.reconnectAttempts }, 'Scheduling brain reconnect');
 
     setTimeout(async () => {
       try {

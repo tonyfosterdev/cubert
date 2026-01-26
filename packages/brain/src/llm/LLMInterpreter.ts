@@ -9,6 +9,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { SensorData } from '../types';
 import { Thought } from '../thought';
 import { llmCallsTotal, llmLatency } from '../metrics';
+import { logger } from '../logger';
 
 export interface ToolCall {
   tool: string;
@@ -166,7 +167,7 @@ export class LLMInterpreter {
     const systemPrompt = this.buildSystemPrompt(sensors, rememberedLocations);
     const userMessage = this.buildUserMessage(thought);
 
-    console.log(`[LLM] Interpreting thought: "${thought.content}"`);
+    logger.info({ thought: thought.content }, 'Interpreting thought');
 
     const endTimer = llmLatency.startTimer();
 
@@ -186,7 +187,7 @@ export class LLMInterpreter {
     } catch (error) {
       endTimer();
       llmCallsTotal.inc({ status: 'error' });
-      console.error('[LLM] Error calling Claude:', error);
+      logger.error({ err: error }, 'Error calling Claude');
       // Return a speak action to indicate error
       return [{ tool: 'speak', args: { message: "Sorry, I couldn't process that request." } }];
     }
@@ -261,7 +262,7 @@ Nearby players: ${players.length > 0 ? players.map(p => `${p.username} at (${Mat
       }
     }
 
-    console.log(`[LLM] Extracted ${toolCalls.length} tool call(s):`, toolCalls.map(t => t.tool));
+    logger.info({ count: toolCalls.length, tools: toolCalls.map(t => t.tool) }, 'Extracted tool calls');
     return toolCalls;
   }
 }

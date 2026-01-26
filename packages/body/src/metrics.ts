@@ -1,5 +1,6 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { Registry, Counter, Gauge, collectDefaultMetrics } from 'prom-client';
+import { logger } from './logger';
 
 const register = new Registry();
 
@@ -54,6 +55,6 @@ export function startMetricsServer(port: number = 9091): void {
   });
 
   server.listen(port, () => {
-    console.log(`[METRICS] Prometheus metrics available at http://localhost:${port}/metrics`);
+    logger.info({ port, endpoint: '/metrics' }, 'Prometheus metrics server started');
   });
 }

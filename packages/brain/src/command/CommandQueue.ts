@@ -10,6 +10,7 @@
  */
 
 import { Action } from '../types';
+import { logger } from '../logger';
 
 export interface Command {
   id: string;
@@ -26,7 +27,7 @@ export class CommandQueue {
    */
   enqueue(...commands: Command[]): void {
     this.queue.push(...commands);
-    console.log(`[CommandQueue] Enqueued ${commands.length} command(s). Queue length: ${this.queue.length}`);
+    logger.debug({ count: commands.length, queueLength: this.queue.length }, 'Commands enqueued');
   }
 
   /**
@@ -44,7 +45,7 @@ export class CommandQueue {
     }
 
     this.currentCommand = this.queue.shift()!;
-    console.log(`[CommandQueue] Executing: ${this.currentCommand.description}`);
+    logger.info({ command: this.currentCommand.description }, 'Executing command');
     return this.currentCommand;
   }
 
@@ -53,7 +54,7 @@ export class CommandQueue {
    */
   complete(actionId: string): boolean {
     if (this.currentCommand && this.currentCommand.action.actionId === actionId) {
-      console.log(`[CommandQueue] Completed: ${this.currentCommand.description}`);
+      logger.debug({ command: this.currentCommand.description }, 'Command completed');
       this.currentCommand = null;
       return true;
     }
@@ -66,7 +67,7 @@ export class CommandQueue {
   clear(): void {
     const count = this.queue.length;
     this.queue = [];
-    console.log(`[CommandQueue] Cleared ${count} pending command(s)`);
+    logger.debug({ cleared: count }, 'Cleared pending commands');
   }
 
   /**
@@ -75,7 +76,7 @@ export class CommandQueue {
   clearAll(): void {
     this.clear();
     if (this.currentCommand) {
-      console.log(`[CommandQueue] Cancelled current command: ${this.currentCommand.description}`);
+      logger.debug({ command: this.currentCommand.description }, 'Cancelled current command');
       this.currentCommand = null;
     }
   }

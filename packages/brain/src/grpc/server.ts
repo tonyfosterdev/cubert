@@ -5,6 +5,7 @@ import { ThoughtBrain } from '../brains';
 import { ChatMessage } from '../thought';
 import { BrainConfig } from '../config';
 import path from 'path';
+import { logger } from '../logger';
 
 const PROTO_PATH = process.env.PROTO_PATH || path.resolve(__dirname, '../../../../proto/cubert.proto');
 
@@ -62,7 +63,7 @@ export class BrainServer {
             return;
           }
 
-          console.log(`Brain gRPC server listening on port ${port}`);
+          logger.info({ port }, 'Brain gRPC server listening');
           resolve();
         }
       );
@@ -70,7 +71,7 @@ export class BrainServer {
   }
 
   private handleConnect(stream: grpc.ServerDuplexStream<any, any>): void {
-    console.log('Bot connected to brain');
+    logger.info('Bot connected to brain');
 
     stream.on('data', async (bodyMessage: any) => {
       try {
@@ -79,7 +80,7 @@ export class BrainServer {
         // Determine message type from the wrapper
         if (bodyMessage.connectEvent) {
           // Body connected/reconnected - reset state
-          console.log('[CONNECT] Body connected, resetting brain');
+          logger.info('Body connected, resetting brain');
           this.brain.reset?.();
 
           // Process initial sensor data if provided
@@ -94,12 +95,12 @@ export class BrainServer {
         } else if (bodyMessage.actionEvent) {
           // Immediate action event
           const event = this.deserializeActionEvent(bodyMessage.actionEvent);
-          console.log(`[EVENT] ${event.eventType}: ${event.actionId} = ${event.result}`);
+          logger.info({ eventType: event.eventType, actionId: event.actionId, result: event.result }, 'Action event');
           actions = (await this.brain.onActionComplete?.(event)) || [];
         } else if (bodyMessage.chatMessage) {
           // Chat message from player
           const chat = this.deserializeChatMessage(bodyMessage.chatMessage);
-          console.log(`[CHAT] ${chat.sender}: "${chat.message}"`);
+          logger.info({ sender: chat.sender, message: chat.message }, 'Chat message');
           actions = (await this.brain.onChatMessage?.(chat)) || [];
         }
 
@@ -109,16 +110,16 @@ export class BrainServer {
           stream.write(actionMsg);
         }
       } catch (err) {
-        console.error('Error processing message:', err);
+        logger.error({ err }, 'Error processing message');
       }
     });
 
     stream.on('error', (err: Error) => {
-      console.error('Stream error:', err);
+      logger.error({ err }, 'Stream error');
     });
 
     stream.on('end', () => {
-      console.log('Bot disconnected from brain');
+      logger.info('Bot disconnected from brain');
       stream.end();
     });
   }
@@ -128,7 +129,7 @@ export class BrainServer {
     callback: grpc.sendUnaryData<any>
   ): void {
     const { botId } = call.request;
-    console.log(`Ping from ${botId}`);
+    logger.debug({ botId }, 'Ping received');
 
     callback(null, {
       ready: true,
@@ -218,7 +219,7 @@ export class BrainServer {
 
   stop(): void {
     this.server.tryShutdown(() => {
-      console.log('Brain server stopped');
+      logger.info('Brain server stopped');
     });
   }
 }
