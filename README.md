@@ -2,53 +2,117 @@
 
 A modular Minecraft bot system with clean separation between perception/actuation (Body) and decision-making (Brain).
 
-## Architecture
+## A Platform for Trust and Governance Research
 
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Minecraft     │◄───►│      Body       │◄───►│      Brain      │
-│   Server        │     │  (Mineflayer)   │     │ (State Machine) │
-│                 │     │                 │     │                 │
-│   Port: 25565   │     │  Sensors:       │     │  States:        │
-│   RCON: 25575   │     │  - Position     │────►│  - IDLE         │
-│                 │     │  - Blocks       │     │  - SEARCHING    │
-│                 │     │  - Inventory    │     │  - MOVING       │
-│                 │     │  - Health       │     │  - MINING       │
-│                 │     │                 │     │  - DEPOSITING   │
-│                 │     │  Actuators:     │◄────│                 │
-│                 │     │  - Movement     │     │  gRPC Server    │
-│                 │     │  - Mining       │     │  Port: 5000     │
-│                 │     │  - Inventory    │     │                 │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-        Docker                Local/Docker           Local/Docker
-```
+Cubert is a small, playful platform for studying the challenges involved in **Trust and Governance of autonomous systems**. By using Minecraft as an accessible, observable environment, Cubert provides a safe sandbox to explore questions like:
 
-## Prerequisites
+- **How do we trust an LLM-powered agent?** The bot interprets natural language commands and decides how to act. When should it ask for clarification vs. act autonomously?
+- **What governance mechanisms work?** Movement profiles, hazard avoidance buffers, and command queues are all forms of constraints. How do we balance autonomy with safety?
+- **How do we observe and audit behavior?** With full metrics, logging, and a visual Minecraft client, you can watch exactly what the agent does and why.
+- **How do we handle failure gracefully?** Lava pits, lost connections, and ambiguous commands all test the system's robustness.
+
+This makes Cubert ideal for workshops, demos, and exploratory research on autonomous agent behavior.
+
+## Quick Start
+
+### Prerequisites
 
 - Docker and Docker Compose
 - Node.js 20+ (for local development)
+- Minecraft Java Edition 1.20.4 (optional, to observe the bot)
+- `ANTHROPIC_API_KEY` environment variable set
 
-## Quick Start with Docker
-
-Run everything in Docker containers:
+### Run the Full Stack
 
 ```bash
-# Start all services
-./scripts/dev.sh gold-mining
+# Clone and enter the repo
+git clone https://github.com/your-org/cubert.git
+cd cubert
 
-# Or manually:
+# Set your API key
+export ANTHROPIC_API_KEY=your-key-here
+
+# Start all services
 docker compose up --build
 ```
 
 This starts:
-- Minecraft server (always in Docker)
-- Brain service (gRPC server with state machine)
-- Body service (Mineflayer bot)
-- Scenario initializer (sets up the world)
+- **Minecraft server** on port 25565 (RCON on 25575)
+- **Brain service** - LLM-powered decision making (gRPC on 5000)
+- **Body service** - Mineflayer bot with sensors and actuators
+- **Scenario runner** - Sets up the world and spawns resources
+- **Prometheus + Grafana** - Metrics and dashboards
+
+### Observe the Bot
+
+1. Open Minecraft Java Edition 1.20.4
+2. Multiplayer → Add Server → `localhost:25565`
+3. Join the game and find Cubert
+4. Chat commands like `mine gold`, `go to chest`, or `stop` to interact
+
+### View Metrics
+
+- **Grafana**: http://localhost:3000 (admin/admin)
+- **Prometheus**: http://localhost:9090
+- **Body metrics**: http://localhost:9091/metrics
+- **Brain metrics**: http://localhost:9092/metrics
+
+## Architecture Overview
+
+```mermaid
+graph LR
+    subgraph MC["Minecraft Server"]
+        MCS["Port: 25565<br/>RCON: 25575"]
+    end
+
+    subgraph Body["Body (Mineflayer)"]
+        Sensors["Sensors<br/>Position | Blocks<br/>Inventory | Health"]
+        Actuators["Actuators<br/>Movement | Mining<br/>Inventory | Chat"]
+    end
+
+    subgraph Brain["Brain (LLM-powered)"]
+        Interpreter["Claude LLM<br/>Interpreter"]
+        Actions["Actions<br/>move_to | mine_block<br/>deposit | speak"]
+    end
+
+    MC <-->|"Game Events"| Body
+    Sensors -->|"SensorData<br/>(gRPC)"| Brain
+    Brain -->|"Actions<br/>(gRPC)"| Actuators
+```
+
+For detailed architecture documentation including component internals, data flows, and design decisions, see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+
+## Project Structure
+
+```
+cubert/
+├── proto/
+│   └── cubert.proto          # gRPC service definitions
+├── packages/
+│   ├── body/                 # Mineflayer bot service
+│   │   └── src/
+│   │       ├── bot/          # Bot connection management
+│   │       ├── sensors/      # Position, blocks, inventory, health
+│   │       ├── actuators/    # Movement, mining, inventory, chat
+│   │       └── grpc/         # Brain client
+│   └── brain/                # Decision-making service
+│       └── src/
+│           ├── brains/       # Brain implementations
+│           ├── llm/          # Claude API integration
+│           ├── command/      # Command queue
+│           └── grpc/         # gRPC server
+├── scenarios/
+│   └── semi-autonomous/      # Scenario configuration
+├── tools/
+│   └── scenario-runner/      # RCON world setup
+├── scripts/                  # Helper scripts
+├── ARCHITECTURE.md           # Detailed architecture docs
+└── docker-compose.yml        # Full stack configuration
+```
 
 ## Local Development
 
-Run the brain and body services locally for faster iteration, with only Minecraft in Docker.
+For faster iteration, run Brain and Body locally while Minecraft stays in Docker.
 
 ### 1. Start Minecraft Server
 
@@ -58,7 +122,7 @@ docker run -d \
   -p 25565:25565 \
   -p 25575:25575 \
   -e EULA=TRUE \
-  -e TYPE=VANILLA \
+  -e TYPE=PAPER \
   -e VERSION=1.20.4 \
   -e ONLINE_MODE=FALSE \
   -e ENABLE_RCON=TRUE \
@@ -66,111 +130,36 @@ docker run -d \
   -e MEMORY=2G \
   itzg/minecraft-server
 
-# Wait for server to be ready (check logs)
+# Wait for "Done!" in logs
 docker logs -f minecraft
 ```
 
 ### 2. Install Dependencies
 
 ```bash
-# Install all packages
 cd packages/brain && npm install && cd ../..
 cd packages/body && npm install && cd ../..
 cd tools/scenario-runner && npm install && cd ../..
 ```
 
-### 3. Start Brain Service
+### 3. Start Services (in separate terminals)
 
+**Brain**:
 ```bash
 cd packages/brain
-BRAIN_PORT=5000 SCENARIO=gold-mining npm run dev
+ANTHROPIC_API_KEY=your-key BRAIN_PORT=5000 SCENARIO=semi-autonomous npm run dev
 ```
 
-You should see:
-```
-Cubert Brain starting...
-Scenario: gold-mining
-Initial state: IDLE
-Brain gRPC server listening on port 5000
-```
-
-### 4. Start Body Service
-
-In a new terminal:
-
+**Body**:
 ```bash
 cd packages/body
 MC_HOST=localhost MC_PORT=25565 BRAIN_HOST=localhost BRAIN_PORT=5000 npm run dev
 ```
 
-You should see:
-```
-Cubert Body starting...
-Connecting to Minecraft server at localhost:25565...
-Bot Cubert spawned!
-Connected to Minecraft!
-Connected to brain!
-Cubert Body ready!
-```
-
-### 5. Start Scenario (setup + spawner)
-
-In a new terminal:
-
+**Scenario Runner**:
 ```bash
 cd tools/scenario-runner
-MC_HOST=localhost npm run dev
-```
-
-This does three things:
-1. **World setup** - creates arena, lava pit, chest
-2. **Bot setup** - teleports bot to spawn, gives iron pickaxe
-3. **Spawner loop** - continuously spawns 3 gold ore every 15 seconds
-
-Keep this terminal running - it handles the continuous gold spawning.
-
-## Observing the Bot
-
-### Connect with Minecraft Client
-
-1. Open Minecraft Java Edition 1.20.4
-2. Multiplayer → Add Server → `localhost:25565`
-3. Join and watch Cubert mine gold!
-
-### View Logs
-
-```bash
-# Docker mode
-docker compose logs -f brain
-docker compose logs -f body
-
-# Local mode - logs appear in each terminal
-```
-
-## Project Structure
-
-```
-cubert/
-├── proto/
-│   └── cubert.proto          # gRPC service definitions
-├── packages/
-│   ├── body/                  # Mineflayer bot service
-│   │   └── src/
-│   │       ├── bot/           # Bot connection management
-│   │       ├── sensors/       # Position, blocks, inventory, health
-│   │       ├── actuators/     # Movement, mining, chat
-│   │       └── grpc/          # Brain client
-│   └── brain/                 # Decision-making service
-│       └── src/
-│           ├── state-machine/ # Generic state machine
-│           │   └── scenarios/ # Scenario-specific states
-│           └── grpc/          # gRPC server
-├── scenarios/
-│   └── gold-mining/           # Scenario configuration
-├── tools/
-│   └── scenario-runner/       # RCON world setup
-├── scripts/                   # Helper scripts
-└── docker-compose.yml         # Full stack configuration
+MC_HOST=localhost SCENARIO=semi-autonomous npm run dev
 ```
 
 ## Environment Variables
@@ -185,15 +174,15 @@ cubert/
 | BOT_USERNAME | Cubert | Bot username |
 | BRAIN_HOST | brain | Brain service host |
 | BRAIN_PORT | 5000 | Brain service port |
-| PROTO_PATH | (auto) | Path to cubert.proto |
 
 ### Brain Service
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | BRAIN_PORT | 5000 | gRPC server port |
-| SCENARIO | gold-mining | Active scenario |
-| PROTO_PATH | (auto) | Path to cubert.proto |
+| SCENARIO | semi-autonomous | Active scenario |
+| ANTHROPIC_API_KEY | (required) | Claude API key |
+| LLM_MODEL | claude-sonnet-4-20250514 | Claude model to use |
 
 ### Scenario Runner
 
@@ -202,38 +191,22 @@ cubert/
 | MC_HOST | minecraft | Minecraft server host |
 | RCON_PORT | 25575 | RCON port |
 | RCON_PASSWORD | minecraft | RCON password |
-| SCENARIO | gold-mining | Scenario to initialize |
+| SCENARIO | semi-autonomous | Scenario to initialize |
 | BOT_USERNAME | Cubert | Bot to equip |
 
 ## Scripts
 
 ```bash
-./scripts/dev.sh [scenario]     # Start full Docker stack
-./scripts/run-scenario.sh [scenario]  # Re-initialize scenario
-./scripts/logs.sh [service]     # View service logs
-./scripts/rcon.sh <command>     # Execute RCON command
+./scripts/dev.sh [scenario]          # Start full Docker stack
+./scripts/run-scenario.sh [scenario] # Re-initialize scenario
+./scripts/logs.sh [service]          # View service logs
+./scripts/rcon.sh <command>          # Execute RCON command
 ```
-
-## Gold Mining Scenario
-
-The default scenario creates:
-- Stone platform at y=63
-- Lava pit (danger zone) at coordinates (5-8, 62, 5-8)
-- Chest at (-8, 64, 0) for deposits
-
-The gold spawner continuously places 3 gold ore blocks every 15 seconds.
-
-The bot will:
-1. Search for nearby gold ore
-2. Navigate to gold (avoiding lava)
-3. Mine the ore
-4. When inventory has 32+ gold items, find and deposit in chest
-5. Repeat (gold respawns via spawner)
 
 ## Troubleshooting
 
 ### Bot can't connect to Minecraft
-- Ensure Minecraft server is fully started (check for "Done!" in logs)
+- Ensure Minecraft server shows "Done!" in logs
 - Verify `ONLINE_MODE=FALSE` is set
 - Check port 25565 is accessible
 
@@ -241,11 +214,8 @@ The bot will:
 - Ensure brain service is running first
 - Check BRAIN_HOST and BRAIN_PORT match
 - Verify port 5000 is accessible
+- Ensure ANTHROPIC_API_KEY is set
 
 ### Proto file not found
 - In Docker: Ensure `PROTO_PATH=/app/proto/cubert.proto`
 - Locally: The path is auto-resolved from source location
-
-### Hot reload not working in Docker
-- Nodemon uses legacy watch mode (`-L` flag) for Docker volumes
-- Changes to `src/` should trigger restart automatically
