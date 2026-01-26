@@ -2,6 +2,8 @@
 
 A modular Minecraft bot system with clean separation between perception/actuation (Body) and decision-making (Brain).
 
+![Check out Cubert mining gold, until it all goes wrong!](https://img.youtube.com/vi/jbTugBI1GaI/maxresdefault.jpg)](https://www.youtube.com/watch?v=jbTugBI1GaI)
+
 ## A Platform for Trust and Governance Research
 
 Cubert is a small, playful platform for studying the challenges involved in **Trust and Governance of autonomous systems**. By using Minecraft as an accessible, observable environment, Cubert provides a safe sandbox to explore questions like:
