@@ -102,6 +102,7 @@ async function main() {
   const rconPort = parseInt(process.env.RCON_PORT || '25575');
   const rconPassword = process.env.RCON_PASSWORD || 'minecraft';
   const botUsername = process.env.BOT_USERNAME || 'Cubert';
+  const botSkin = process.env.BOT_SKIN || '';
   const spawnIntervalOverride = process.env.SPAWN_INTERVAL_MS ? parseInt(process.env.SPAWN_INTERVAL_MS) : null;
 
   console.log(`[${timestamp()}] === Cubert Scenario Runner ===`);
@@ -188,10 +189,21 @@ async function main() {
 
   // Teleport and equip bot
   console.log(`\n[${timestamp()}] --- Phase 3: Bot Setup ---`);
-  await executeCommands(rcon, [
+  const setupCommands = [
     `tp ${botUsername} ${config.spawn.x} ${config.spawn.y} ${config.spawn.z}`,
     `give ${botUsername} iron_pickaxe 1`,
-  ]);
+  ];
+
+  // Set skin via SkinsRestorer if configured
+  if (botSkin) {
+    if (botSkin.startsWith('url:')) {
+      setupCommands.push(`sr skin url ${botUsername} ${botSkin.slice(4)}`);
+    } else {
+      setupCommands.push(`sr skin set ${botUsername} ${botSkin}`);
+    }
+  }
+
+  await executeCommands(rcon, setupCommands);
 
   console.log(`\n[${timestamp()}] === Setup complete! ===`);
 
