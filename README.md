@@ -2,7 +2,7 @@
 
 A modular Minecraft bot system with clean separation between perception/actuation (Body) and decision-making (Brain).
 
-[![Check out Cubert mining gold, until it all goes wrong!](https://img.youtube.com/vi/jbTugBI1GaI/maxresdefault.jpg)](https://www.youtube.com/watch?v=jbTugBI1GaI)
+[![Check out Cubert mining gold, until it all goes wrong!](https://img.youtube.com/vi/jbTugBI1GaI/hqdefault.jpg)](https://www.youtube.com/watch?v=jbTugBI1GaI)
 
 ## A Platform for Trust and Governance Research
 
