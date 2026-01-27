@@ -4,6 +4,7 @@ import { PositionSensor, PositionData } from './PositionSensor';
 import { BlockSensor, BlocksData } from './BlockSensor';
 import { InventorySensor, InventoryData } from './InventorySensor';
 import { HealthSensor, HealthData } from './HealthSensor';
+import { PlayerSensor, PlayerInfo } from './PlayerSensor';
 
 export interface SensorData {
   timestamp: string;
@@ -13,6 +14,7 @@ export interface SensorData {
   health: HealthData;
   nearbyBlocks: BlocksData;
   pathStatus: PathStatus;
+  nearbyPlayers: PlayerInfo[];
 }
 
 export interface PathStatus {
@@ -29,6 +31,7 @@ export class SensorAggregator {
   private blockSensor: BlockSensor;
   private inventorySensor: InventorySensor;
   private healthSensor: HealthSensor;
+  private playerSensor: PlayerSensor;
 
   constructor(bot: Bot, config: BodyConfig) {
     this.bot = bot;
@@ -41,6 +44,9 @@ export class SensorAggregator {
     });
     this.inventorySensor = new InventorySensor(bot);
     this.healthSensor = new HealthSensor(bot);
+    this.playerSensor = new PlayerSensor(bot, {
+      maxCount: config.sensors.playerSearchCount ?? 10,
+    });
   }
 
   collect(): SensorData {
@@ -54,6 +60,7 @@ export class SensorAggregator {
       health: this.healthSensor.read(),
       nearbyBlocks: this.blockSensor.read(),
       pathStatus,
+      nearbyPlayers: this.playerSensor.read(),
     };
   }
 
@@ -82,3 +89,4 @@ export { PositionSensor } from './PositionSensor';
 export { BlockSensor } from './BlockSensor';
 export { InventorySensor } from './InventorySensor';
 export { HealthSensor } from './HealthSensor';
+export { PlayerSensor, PlayerInfo } from './PlayerSensor';

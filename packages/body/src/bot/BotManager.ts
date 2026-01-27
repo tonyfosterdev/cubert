@@ -2,6 +2,7 @@ import mineflayer, { Bot } from 'mineflayer';
 import { pathfinder, Movements } from 'mineflayer-pathfinder';
 import { EventEmitter } from 'events';
 import { BodyConfig } from '../config';
+import { logger } from '../logger';
 
 export class BotManager extends EventEmitter {
   private config: BodyConfig;
@@ -15,7 +16,7 @@ export class BotManager extends EventEmitter {
 
   async connect(): Promise<Bot> {
     return new Promise((resolve, reject) => {
-      console.log(`Connecting to Minecraft server at ${this.config.minecraft.host}:${this.config.minecraft.port}...`);
+      logger.info({ host: this.config.minecraft.host, port: this.config.minecraft.port }, 'Connecting to Minecraft server');
 
       this.bot = mineflayer.createBot({
         host: this.config.minecraft.host,
@@ -29,7 +30,7 @@ export class BotManager extends EventEmitter {
       this.bot.loadPlugin(pathfinder);
 
       this.bot.once('spawn', () => {
-        console.log(`Bot ${this.config.minecraft.username} spawned!`);
+        logger.info({ username: this.config.minecraft.username }, 'Bot spawned');
         this.setupPathfinder();
 
         // Wait for chunks AND physics before signaling ready
@@ -52,7 +53,7 @@ export class BotManager extends EventEmitter {
           const onPhysics = () => {
             if (++physicsTicks >= 5) { // ~250ms of physics
               this.bot!.off('physicsTick', onPhysics);
-              console.log('Bot ready (chunks loaded, physics initialized)');
+              logger.info('Bot ready (chunks loaded, physics initialized)');
               this.emit('botReady', this.bot);
               resolve(this.bot!);
             }
@@ -64,22 +65,25 @@ export class BotManager extends EventEmitter {
       });
 
       this.bot.once('error', (err) => {
-        console.error('Bot connection error:', err);
+        logger.error({ err }, 'Bot connection error');
         reject(err);
       });
 
       this.bot.on('kicked', (reason) => {
-        console.error('Bot kicked:', reason);
+        logger.error({ reason }, 'Bot kicked');
         this.scheduleReconnect();
       });
 
       this.bot.on('end', () => {
-        console.log('Bot disconnected');
+        logger.info('Bot disconnected');
         this.scheduleReconnect();
       });
 
       this.bot.on('death', () => {
-        console.log('Bot died, will respawn...');
+        logger.info('Bot died, shutting down (no reconnect on death)');
+        this.reconnecting = true; // Prevent scheduleReconnect from firing
+        this.bot?.quit();
+        process.exit(1);
       });
     });
   }
@@ -91,7 +95,7 @@ export class BotManager extends EventEmitter {
     const movements = new Movements(this.bot);
 
     movements.canDig = true;
-    movements.allowParkour = true;
+    movements.allowParkour = false;
     movements.allowSprinting = true;
 
     // Avoid lava and other hazards
@@ -108,14 +112,14 @@ export class BotManager extends EventEmitter {
     if (this.reconnecting) return;
     this.reconnecting = true;
 
-    console.log(`Reconnecting in ${this.config.grpc.reconnectIntervalMs}ms...`);
+    logger.info({ delayMs: this.config.grpc.reconnectIntervalMs }, 'Scheduling reconnect');
 
     setTimeout(async () => {
       this.reconnecting = false;
       try {
         await this.connect();
       } catch (err) {
-        console.error('Reconnection failed:', err);
+        logger.error({ err }, 'Reconnection failed');
         this.scheduleReconnect();
       }
     }, this.config.grpc.reconnectIntervalMs);

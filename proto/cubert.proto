@@ -25,7 +25,14 @@ message BodyMessage {
     SensorData sensor_data = 1;
     ActionEvent action_event = 2;
     ConnectEvent connect_event = 3;
+    ChatMessage chat_message = 4;
   }
+}
+
+message ChatMessage {
+  fixed64 timestamp = 1;
+  string sender = 2;
+  string message = 3;
 }
 
 message ConnectEvent {
@@ -60,6 +67,15 @@ message SensorData {
   HealthData health = 5;
   BlocksData nearby_blocks = 6;
   PathStatus path_status = 7;
+  repeated PlayerInfo nearby_players = 8;
+}
+
+message PlayerInfo {
+  string username = 1;
+  double x = 2;
+  double y = 3;
+  double z = 4;
+  float distance = 5;                 // Distance from bot
 }
 
 message PositionData {
@@ -144,6 +160,7 @@ message Action {
     SpeakAction speak = 13;
     IdleAction idle = 14;
     CancelAction cancel = 15;
+    WithdrawItemsAction withdraw_items = 16;
   }
 }
 
@@ -155,14 +172,46 @@ enum ActionType {
   ACTION_TYPE_SPEAK = 4;
   ACTION_TYPE_IDLE = 5;
   ACTION_TYPE_CANCEL = 6;
+  ACTION_TYPE_WITHDRAW_ITEMS = 7;
 }
 
 message MoveToAction {
   int32 x = 1;
   int32 y = 2;
   int32 z = 3;
-  int32 range = 4;                    // How close to get (default 1)
-  bool sprint = 5;
+
+  HazardConfig hazards = 4;
+  LiquidConfig liquids = 5;
+  LocomotionConfig locomotion = 6;
+  PathfindingConfig pathfinding = 7;
+}
+
+message HazardConfig {
+  int32 buffer_distance = 1;
+  int32 scan_radius = 2;
+  int32 scan_count = 3;
+  int32 vertical_buffer_min = 4;
+  int32 vertical_buffer_max = 5;
+  repeated string hazard_blocks = 6;
+  repeated string blocks_to_avoid = 7;
+  repeated string blocks_cant_break = 8;
+}
+
+message LiquidConfig {
+  repeated string treat_as_air = 1;
+  int32 liquid_cost = 2;
+}
+
+message LocomotionConfig {
+  bool can_dig = 1;
+  bool allow_parkour = 2;
+  bool allow_sprinting = 3;
+}
+
+message PathfindingConfig {
+  int32 goal_range = 1;
+  int32 max_attempts = 2;
+  int32 retry_delay_ms = 3;
 }
 
 message MineBlockAction {
@@ -188,6 +237,14 @@ message IdleAction {
 
 message CancelAction {
   string target_action_id = 1;
+}
+
+message WithdrawItemsAction {
+  int32 chest_x = 1;
+  int32 chest_y = 2;
+  int32 chest_z = 3;
+  repeated string item_names = 4;     // Items to withdraw (empty = all)
+  int32 count = 5;                    // Max count per item (0 = all available)
 }
 
 // ============================================================================

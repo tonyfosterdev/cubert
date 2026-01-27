@@ -1,6 +1,6 @@
 {
-  "name": "gold-mining",
-  "description": "Mine gold ore, avoid lava, deposit in chest",
+  "name": "semi-autonomous",
+  "description": "LLM-controlled bot that responds to chat commands",
   "version": "1.0.0",
   "minecraft": {
     "gamemode": "survival",
@@ -9,7 +9,7 @@
     "weather": "clear"
   },
   "spawn": {
-    "x": 0,
+    "x": -10,
     "y": 65,
     "z": 0
   },
@@ -17,7 +17,7 @@
     "commands": "setup.mcfunction"
   },
   "spawner": {
-    "commands": "spawn-gold.mcfunction",
-    "intervalMs": 15000
+    "commands": "spawn-resources.mcfunction",
+    "intervalMs": 30000
   }
 }

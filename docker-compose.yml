@@ -3,7 +3,7 @@ services:
     image: itzg/minecraft-server:latest
     environment:
       EULA: "TRUE"
-      TYPE: "VANILLA"
+      TYPE: "PAPER"
       VERSION: "1.20.4"
       ONLINE_MODE: "FALSE"
       ENABLE_RCON: "TRUE"
@@ -12,6 +12,7 @@ services:
       DIFFICULTY: "normal"
       SPAWN_PROTECTION: "0"
       ENABLE_AUTOPAUSE: "FALSE"
+      MODRINTH_PROJECTS: "skinsrestorer"
     ports:
       - "25565:25565"
       - "25575:25575"
@@ -33,6 +34,7 @@ services:
       SCENARIO: "${SCENARIO:-gold-mining}"
       NODE_ENV: "development"
       PROTO_PATH: "/app/proto/cubert.proto"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
     ports:
       - "5000:5000"
       - "9230:9230"
@@ -80,6 +82,7 @@ services:
       RCON_PORT: "25575"
       RCON_PASSWORD: "minecraft"
       BOT_USERNAME: "Cubert"
+      BOT_SKIN: "${BOT_SKIN:-}"
       SCENARIO: "${SCENARIO:-gold-mining}"
     volumes:
       - ./scenarios:/scenarios:ro

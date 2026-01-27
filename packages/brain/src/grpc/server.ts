@@ -1,21 +1,40 @@
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
-import { StateMachine } from '../state-machine/StateMachine';
-import { SensorData, Action, ActionEvent } from '../state-machine/State';
+import { SensorData, Action, ActionEvent } from '../types';
+import { ThoughtBrain } from '../brains';
+import { ChatMessage } from '../thought';
 import { BrainConfig } from '../config';
 import path from 'path';
+import { logger } from '../logger';
 
 const PROTO_PATH = process.env.PROTO_PATH || path.resolve(__dirname, '../../../../proto/cubert.proto');
+
+// Brain abstraction for different implementations
+interface Brain {
+  onConnect?(initialData: SensorData): Promise<Action[]>;
+  onSensorUpdate?(data: SensorData): Promise<Action[]>;
+  onActionComplete?(event: ActionEvent): Promise<Action[]>;
+  onChatMessage?(chat: ChatMessage): Promise<Action[]>;
+  reset?(): void;
+}
 
 export class BrainServer {
   private config: BrainConfig;
   private server: grpc.Server;
-  private stateMachine: StateMachine;
+  private thoughtBrain: ThoughtBrain;
+  private brain: Brain;
 
-  constructor(config: BrainConfig, stateMachine: StateMachine) {
+  constructor(config: BrainConfig, brainImpl: ThoughtBrain) {
     this.config = config;
-    this.stateMachine = stateMachine;
     this.server = new grpc.Server();
+    this.thoughtBrain = brainImpl;
+    this.brain = {
+      onConnect: (data) => this.thoughtBrain.onConnect(data),
+      onSensorUpdate: (data) => this.thoughtBrain.onSensorUpdate(data),
+      onActionComplete: (event) => this.thoughtBrain.onActionComplete(event),
+      onChatMessage: (chat) => this.thoughtBrain.onChatMessage(chat),
+      reset: () => this.thoughtBrain.reset(),
+    };
   }
 
   async start(): Promise<void> {
@@ -44,7 +63,7 @@ export class BrainServer {
             return;
           }
 
-          console.log(`Brain gRPC server listening on port ${port}`);
+          logger.info({ port }, 'Brain gRPC server listening');
           resolve();
         }
       );
@@ -52,58 +71,55 @@ export class BrainServer {
   }
 
   private handleConnect(stream: grpc.ServerDuplexStream<any, any>): void {
-    console.log('Bot connected to brain');
+    logger.info('Bot connected to brain');
 
-    stream.on('data', (bodyMessage: any) => {
+    stream.on('data', async (bodyMessage: any) => {
       try {
+        let actions: Action[] = [];
+
         // Determine message type from the wrapper
         if (bodyMessage.connectEvent) {
           // Body connected/reconnected - reset state
-          console.log('[CONNECT] Body connected, resetting state machine');
-          this.stateMachine.resetToSafeState();
+          logger.info('Body connected, resetting brain');
+          this.brain.reset?.();
 
           // Process initial sensor data if provided
           if (bodyMessage.connectEvent.initialSensorData) {
             const sensorData = this.deserializeSensorData(bodyMessage.connectEvent.initialSensorData);
-            const actions = this.stateMachine.update(sensorData);
-
-            for (const action of actions) {
-              const actionMsg = this.serializeAction(action);
-              stream.write(actionMsg);
-            }
+            actions = (await this.brain.onConnect?.(sensorData)) || [];
           }
         } else if (bodyMessage.sensorData) {
           // Regular sensor update
           const sensorData = this.deserializeSensorData(bodyMessage.sensorData);
-          const actions = this.stateMachine.update(sensorData);
-
-          for (const action of actions) {
-            const actionMsg = this.serializeAction(action);
-            stream.write(actionMsg);
-          }
+          actions = (await this.brain.onSensorUpdate?.(sensorData)) || [];
         } else if (bodyMessage.actionEvent) {
           // Immediate action event
           const event = this.deserializeActionEvent(bodyMessage.actionEvent);
-          console.log(`[EVENT] ${event.eventType}: ${event.actionId} = ${event.result}`);
+          logger.info({ eventType: event.eventType, actionId: event.actionId, result: event.result }, 'Action event');
+          actions = (await this.brain.onActionComplete?.(event)) || [];
+        } else if (bodyMessage.chatMessage) {
+          // Chat message from player
+          const chat = this.deserializeChatMessage(bodyMessage.chatMessage);
+          logger.info({ sender: chat.sender, message: chat.message }, 'Chat message');
+          actions = (await this.brain.onChatMessage?.(chat)) || [];
+        }
 
-          const actions = this.stateMachine.handleEvent(event);
-
-          for (const action of actions) {
-            const actionMsg = this.serializeAction(action);
-            stream.write(actionMsg);
-          }
+        // Send all actions
+        for (const action of actions) {
+          const actionMsg = this.serializeAction(action);
+          stream.write(actionMsg);
         }
       } catch (err) {
-        console.error('Error processing message:', err);
+        logger.error({ err }, 'Error processing message');
       }
     });
 
     stream.on('error', (err: Error) => {
-      console.error('Stream error:', err);
+      logger.error({ err }, 'Stream error');
     });
 
     stream.on('end', () => {
-      console.log('Bot disconnected from brain');
+      logger.info('Bot disconnected from brain');
       stream.end();
     });
   }
@@ -113,7 +129,7 @@ export class BrainServer {
     callback: grpc.sendUnaryData<any>
   ): void {
     const { botId } = call.request;
-    console.log(`Ping from ${botId}`);
+    logger.debug({ botId }, 'Ping received');
 
     callback(null, {
       ready: true,
@@ -159,6 +175,13 @@ export class BrainServer {
         isMining: msg.pathStatus?.isMining || false,
         targetBlock: msg.pathStatus?.targetBlock || null,
       },
+      nearbyPlayers: (msg.nearbyPlayers || []).map((p: any) => ({
+        username: p.username || '',
+        x: p.x || 0,
+        y: p.y || 0,
+        z: p.z || 0,
+        distance: p.distance || 0,
+      })),
     };
   }
 
@@ -171,6 +194,14 @@ export class BrainServer {
     };
   }
 
+  private deserializeChatMessage(msg: any): ChatMessage {
+    return {
+      timestamp: parseInt(msg.timestamp) || Date.now(),
+      sender: msg.sender || 'unknown',
+      message: msg.message || '',
+    };
+  }
+
   private serializeAction(action: Action): any {
     return {
       actionId: action.actionId,
@@ -179,6 +210,7 @@ export class BrainServer {
       moveTo: action.moveTo,
       mineBlock: action.mineBlock,
       depositItems: action.depositItems,
+      withdrawItems: action.withdrawItems,
       speak: action.speak,
       idle: action.idle,
       cancel: action.cancel,
@@ -187,7 +219,7 @@ export class BrainServer {
 
   stop(): void {
     this.server.tryShutdown(() => {
-      console.log('Brain server stopped');
+      logger.info('Brain server stopped');
     });
   }
 }

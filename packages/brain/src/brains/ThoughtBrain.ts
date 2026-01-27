@@ -1,0 +1,492 @@
+/**
+ * ThoughtBrain - Brain implementation that processes thoughts via LLM.
+ *
+ * Converts chat messages to thoughts, interprets via LLM, and executes tool calls.
+ * Designed for semi-autonomous operation where user sends plain English commands.
+ */
+
+import { v4 as uuidv4 } from 'uuid';
+import { SensorData, Action, ActionEvent } from '../types';
+import { Thought, ChatMessage, createChatThought } from '../thought';
+import { LLMInterpreter, ToolCall, LLMConfig, ToolResolver } from '../llm';
+import { CommandQueue, Command } from '../command';
+import { thoughtsProcessedTotal, commandsQueuedTotal, commandQueueLength } from '../metrics';
+import { logger } from '../logger';
+
+/**
+ * Movement profiles define all pathfinding parameters.
+ * Brain selects a profile based on context, body just executes the params.
+ */
+export const MOVEMENT_PROFILES = {
+  safe: {
+    hazards: {
+      bufferDistance: 5,
+      scanRadius: 32,
+      scanCount: 10000,
+      verticalBufferMin: -2,
+      verticalBufferMax: 2,
+      hazardBlocks: ['lava', 'flowing_lava', 'fire', 'magma_block'],
+      blocksToAvoid: ['lava', 'flowing_lava', 'fire', 'cactus', 'magma_block'],
+      blocksCantBreak: ['lava', 'flowing_lava'],
+    },
+    liquids: {
+      treatAsAir: [],
+      liquidCost: 100,
+    },
+    locomotion: {
+      canDig: true,
+      allowParkour: false,
+      allowSprinting: false,
+    },
+    pathfinding: {
+      goalRange: 2,
+      maxAttempts: 3,
+      retryDelayMs: 500,
+    },
+  },
+
+  unsafe: {
+    hazards: {
+      bufferDistance: 0,
+      scanRadius: 0,
+      scanCount: 0,
+      verticalBufferMin: 0,
+      verticalBufferMax: 0,
+      hazardBlocks: [],
+      blocksToAvoid: [],
+      blocksCantBreak: [],
+    },
+    liquids: {
+      treatAsAir: ['lava', 'flowing_lava'],
+      liquidCost: 0,
+    },
+    locomotion: {
+      canDig: true,
+      allowParkour: false,
+      allowSprinting: false,
+    },
+    pathfinding: {
+      goalRange: 2,
+      maxAttempts: 3,
+      retryDelayMs: 500,
+    },
+  },
+};
+
+export interface ThoughtBrainConfig {
+  llm: LLMConfig;
+}
+
+export class ThoughtBrain {
+  private interpreter: LLMInterpreter;
+  private sensors: SensorData = {} as SensorData;
+  private commandQueue: CommandQueue = new CommandQueue();
+  private thoughtQueue: Thought[] = [];
+  private isProcessing = false;
+  private rememberedLocations: Map<string, { x: number; y: number; z: number }> = new Map();
+
+  constructor(config: ThoughtBrainConfig) {
+    this.interpreter = new LLMInterpreter(config.llm);
+  }
+
+  async onConnect(initialData: SensorData): Promise<Action[]> {
+    logger.info('ThoughtBrain connected');
+    this.sensors = initialData;
+    this.commandQueue.clearAll();
+    this.thoughtQueue = [];
+    this.isProcessing = false;
+
+    // Say hello on connect
+    const action = this.createSpeakAction('Ready to help!');
+    return [action];
+  }
+
+  async onSensorUpdate(data: SensorData): Promise<Action[]> {
+    this.sensors = data;
+
+    // Try to execute next command if nothing is in progress
+    const nextAction = this.tryExecuteNextCommand();
+    if (nextAction) {
+      return [nextAction];
+    }
+
+    // Process any queued thoughts if not currently processing
+    if (!this.isProcessing && this.thoughtQueue.length > 0 && !this.commandQueue.hasInProgress()) {
+      return this.processNextThought();
+    }
+
+    return [];
+  }
+
+  async onActionComplete(event: ActionEvent): Promise<Action[]> {
+    logger.info({ actionId: event.actionId, result: event.result }, 'Action complete');
+
+    // Mark command as complete
+    this.commandQueue.complete(event.actionId);
+
+    // Try to execute next command
+    const nextAction = this.tryExecuteNextCommand();
+    if (nextAction) {
+      return [nextAction];
+    }
+
+    // Process next thought if queue is not empty
+    if (!this.isProcessing && this.thoughtQueue.length > 0 && !this.commandQueue.hasInProgress()) {
+      return this.processNextThought();
+    }
+
+    return [];
+  }
+
+  private tryExecuteNextCommand(): Action | null {
+    const command = this.commandQueue.dequeue();
+    if (command) {
+      // Update queue length metric
+      commandQueueLength.set(this.commandQueue.length());
+      return command.action;
+    }
+    return null;
+  }
+
+  async onChatMessage(chat: ChatMessage): Promise<Action[]> {
+    logger.info({ sender: chat.sender, message: chat.message }, 'Chat received');
+
+    const thought = createChatThought(chat);
+    this.thoughtQueue.push(thought);
+
+    // Process immediately if not currently processing
+    if (!this.isProcessing) {
+      return this.processNextThought();
+    }
+
+    return [];
+  }
+
+  private async processNextThought(): Promise<Action[]> {
+    if (this.thoughtQueue.length === 0) {
+      return [];
+    }
+
+    this.isProcessing = true;
+    const thought = this.thoughtQueue.shift()!;
+
+    // Track thought processing
+    thoughtsProcessedTotal.inc({ source: thought.source });
+
+    try {
+      const toolCalls = await this.interpreter.interpret(thought, this.sensors, this.rememberedLocations);
+      const commands = this.convertToolCallsToCommands(toolCalls);
+
+      // Track commands queued
+      for (const cmd of commands) {
+        const toolName = cmd.description.split(':')[0].toLowerCase().replace('say', 'speak');
+        commandsQueuedTotal.inc({ tool: toolName });
+      }
+
+      // Check if we have a pending cancel action (from stop command)
+      const actions: Action[] = [];
+      if (this.pendingCancelAction) {
+        actions.push(this.pendingCancelAction);
+        this.pendingCancelAction = null;
+      }
+
+      // Queue all commands
+      if (commands.length > 0) {
+        this.commandQueue.enqueue(...commands);
+      }
+
+      // Update queue length metric
+      commandQueueLength.set(this.commandQueue.length());
+
+      this.isProcessing = false;
+
+      // Execute first command immediately
+      const firstAction = this.tryExecuteNextCommand();
+      if (firstAction) {
+        actions.push(firstAction);
+      }
+
+      return actions;
+    } catch (error) {
+      logger.error({ err: error }, 'Error processing thought');
+      this.isProcessing = false;
+      return [this.createSpeakAction('Sorry, something went wrong.')];
+    }
+  }
+
+  private rememberLocation(name: string, coords: { x: number; y: number; z: number }): void {
+    this.rememberedLocations.set(name.toLowerCase(), coords);
+    logger.info({ name, coords }, 'Remembered location');
+  }
+
+  private convertToolCallsToCommands(toolCalls: ToolCall[]): Command[] {
+    const commands: Command[] = [];
+
+    for (const call of toolCalls) {
+      // Handle stop specially - it clears the queue immediately
+      if (call.tool === 'stop') {
+        this.handleStopCommand(call.args.interrupt);
+        // Add speak acknowledgment
+        const speakAction = this.createSpeakAction('Stopping.');
+        commands.push({
+          id: speakAction.actionId,
+          action: speakAction,
+          description: 'Say: "Stopping."',
+        });
+        continue;
+      }
+
+      // Handle remember - stores location in memory, no action produced
+      if (call.tool === 'remember') {
+        const { name, x, y, z } = call.args;
+        this.rememberLocation(name, { x, y, z });
+        continue; // No action produced, LLM should also emit speak for acknowledgment
+      }
+
+      const command = this.toolCallToCommand(call);
+      if (command) {
+        commands.push(command);
+      }
+    }
+
+    return commands;
+  }
+
+  private handleStopCommand(interrupt?: boolean): void {
+    logger.info({ interrupt }, 'Stop command received');
+
+    // Clear all pending commands
+    this.commandQueue.clear();
+
+    // If interrupt is true and there's a current action, we should cancel it
+    // The cancel action will be handled by the body
+    if (interrupt && this.commandQueue.hasInProgress()) {
+      const currentActionId = this.commandQueue.getCurrentActionId();
+      if (currentActionId) {
+        logger.info({ actionId: currentActionId }, 'Cancelling current action');
+        // Create a cancel action - this will be emitted immediately
+        this.pendingCancelAction = this.createCancelAction(currentActionId);
+      }
+      this.commandQueue.clearAll();
+    }
+  }
+
+  private pendingCancelAction: Action | null = null;
+
+  private toolCallToCommand(call: ToolCall): Command | null {
+    const action = this.toolCallToAction(call);
+    if (!action) return null;
+
+    return {
+      id: action.actionId,
+      action,
+      description: this.getCommandDescription(call),
+    };
+  }
+
+  private getCommandDescription(call: ToolCall): string {
+    switch (call.tool) {
+      case 'speak':
+        return `Say: "${call.args.message}"`;
+      case 'move_to':
+        return `Move to: ${call.args.target}`;
+      case 'mine_block':
+        return `Mine: ${call.args.target}`;
+      case 'deposit_items':
+        return `Deposit items`;
+      case 'withdraw_items':
+        return `Withdraw items`;
+      case 'stop':
+        return `Stop`;
+      case 'wait':
+        return `Wait ${call.args.duration_ms}ms`;
+      default:
+        return `Unknown: ${call.tool}`;
+    }
+  }
+
+  private toolCallToAction(call: ToolCall): Action | null {
+    switch (call.tool) {
+      case 'speak':
+        return this.createSpeakAction(call.args.message);
+
+      case 'move_to':
+        return this.createMoveToAction(call.args.target, call.args.urgent);
+
+      case 'mine_block':
+        return this.createMineBlockAction(call.args.target);
+
+      case 'deposit_items':
+        return this.createDepositAction(call.args.items);
+
+      case 'withdraw_items':
+        return this.createWithdrawAction(call.args.items, call.args.count);
+
+      case 'stop':
+        // Handled specially in convertToolCallsToCommands
+        return null;
+
+      case 'wait':
+        return this.createIdleAction(call.args.duration_ms || 1000);
+
+      default:
+        logger.warn({ tool: call.tool }, 'Unknown tool');
+        return null;
+    }
+  }
+
+  private createSpeakAction(message: string): Action {
+    return {
+      actionId: uuidv4(),
+      timestamp: Date.now().toString(),
+      type: 'ACTION_TYPE_SPEAK',
+      speak: { message },
+    };
+  }
+
+  private createMoveToAction(target: string, urgent?: boolean): Action | null {
+    const position = this.resolveTarget(target);
+    if (!position) {
+      logger.warn({ target }, 'Could not resolve move target');
+      return this.createSpeakAction(`I can't find ${target}.`);
+    }
+
+    // Select movement profile based on urgency
+    const profile = urgent ? MOVEMENT_PROFILES.unsafe : MOVEMENT_PROFILES.safe;
+
+    return {
+      actionId: uuidv4(),
+      timestamp: Date.now().toString(),
+      type: 'ACTION_TYPE_MOVE_TO',
+      moveTo: {
+        x: position.x,
+        y: position.y,
+        z: position.z,
+        ...profile,
+      },
+    };
+  }
+
+  private createMineBlockAction(target: string): Action | null {
+    const position = this.resolveMineTarget(target);
+    if (!position) {
+      logger.warn({ target }, 'Could not resolve mine target');
+      return this.createSpeakAction(`I can't find any ${target} to mine.`);
+    }
+
+    return {
+      actionId: uuidv4(),
+      timestamp: Date.now().toString(),
+      type: 'ACTION_TYPE_MINE_BLOCK',
+      mineBlock: {
+        x: position.x,
+        y: position.y,
+        z: position.z,
+      },
+    };
+  }
+
+  private createDepositAction(items?: string[]): Action | null {
+    const resolver = new ToolResolver(this.sensors, this.rememberedLocations);
+    const result = resolver.resolveMovementTarget('chest');
+    if (!result.position) {
+      return this.createSpeakAction("I don't see any chests nearby.");
+    }
+
+    return {
+      actionId: uuidv4(),
+      timestamp: Date.now().toString(),
+      type: 'ACTION_TYPE_DEPOSIT_ITEMS',
+      depositItems: {
+        chestX: result.position.x,
+        chestY: result.position.y,
+        chestZ: result.position.z,
+        itemNames: items || [],
+      },
+    };
+  }
+
+  private createWithdrawAction(items?: string[], count?: number): Action | null {
+    const resolver = new ToolResolver(this.sensors, this.rememberedLocations);
+    const result = resolver.resolveMovementTarget('chest');
+    if (!result.position) {
+      return this.createSpeakAction("I don't see any chests nearby.");
+    }
+
+    return {
+      actionId: uuidv4(),
+      timestamp: Date.now().toString(),
+      type: 'ACTION_TYPE_WITHDRAW_ITEMS',
+      withdrawItems: {
+        chestX: result.position.x,
+        chestY: result.position.y,
+        chestZ: result.position.z,
+        itemNames: items || [],
+        count: count || 0,
+      },
+    };
+  }
+
+  private createIdleAction(durationMs: number): Action {
+    return {
+      actionId: uuidv4(),
+      timestamp: Date.now().toString(),
+      type: 'ACTION_TYPE_IDLE',
+      idle: { durationMs },
+    };
+  }
+
+  private createCancelAction(targetActionId: string): Action {
+    return {
+      actionId: uuidv4(),
+      timestamp: Date.now().toString(),
+      type: 'ACTION_TYPE_CANCEL',
+      cancel: { targetActionId },
+    };
+  }
+
+  private resolveTarget(target: string): { x: number; y: number; z: number; name?: string } | null {
+    const resolver = new ToolResolver(this.sensors, this.rememberedLocations);
+    const result = resolver.resolveMovementTarget(target);
+
+    if (result.position) {
+      return { ...result.position, name: result.name };
+    }
+
+    if (result.error) {
+      logger.warn({ error: result.error }, 'Target resolution error');
+    }
+    return null;
+  }
+
+  private resolveMineTarget(target: string): { x: number; y: number; z: number } | null {
+    const resolver = new ToolResolver(this.sensors, this.rememberedLocations);
+    const result = resolver.resolveMiningTarget(target);
+
+    if (result.position) {
+      return result.position;
+    }
+
+    if (result.error) {
+      logger.warn({ error: result.error }, 'Mine target resolution error');
+    }
+    return null;
+  }
+
+  reset(): void {
+    this.sensors = {} as SensorData;
+    this.commandQueue.clearAll();
+    this.thoughtQueue = [];
+    this.isProcessing = false;
+    this.pendingCancelAction = null;
+    this.rememberedLocations.clear();
+    logger.info('ThoughtBrain reset');
+  }
+
+  /**
+   * Get the current command queue for inspection.
+   */
+  getCommandQueue(): CommandQueue {
+    return this.commandQueue;
+  }
+}

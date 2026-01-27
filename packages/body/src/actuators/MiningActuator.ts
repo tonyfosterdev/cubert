@@ -1,5 +1,6 @@
 import { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import { goals } from 'mineflayer-pathfinder';
 import { BaseActuator } from './BaseActuator';
 import { goldMinedTotal } from '../metrics';
 
@@ -45,6 +46,9 @@ export class MiningActuator extends BaseActuator {
         goldMinedTotal.inc();
       }
 
+      // Walk to the block position to pick up the dropped item
+      await this.collectDrop(position);
+
       this.complete(actionId, true);
     } catch (err: any) {
       console.log(`[MINE] Failed: ${err.message}`);
@@ -64,6 +68,20 @@ export class MiningActuator extends BaseActuator {
       }
     }
     console.log(`[MINE] No pickaxe found in inventory, mining with current item`);
+  }
+
+  private async collectDrop(position: Vec3): Promise<void> {
+    try {
+      console.log(`[MINE] Walking to collect drop at (${position.x}, ${position.y}, ${position.z})`);
+      const goal = new goals.GoalBlock(position.x, position.y, position.z);
+      await (this.bot as any).pathfinder.goto(goal);
+      // Brief pause to ensure item pickup
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      console.log(`[MINE] Collected drop`);
+    } catch (err: any) {
+      // Non-fatal - item might still be picked up or we're already close enough
+      console.log(`[MINE] Could not walk to drop: ${err.message}`);
+    }
   }
 
   cancel(): void {

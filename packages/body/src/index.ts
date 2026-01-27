@@ -4,10 +4,12 @@ import { BotManager } from './bot/BotManager';
 import { SensorAggregator } from './sensors';
 import { ActuatorRegistry } from './actuators';
 import { BrainClient } from './grpc/client';
+import { ChatListener } from './chat';
 import { startMetricsServer, botConnected, sensorGathersTotal, goldInventory, actionsTotal } from './metrics';
+import { logger } from './logger';
 
 async function main() {
-  console.log('Cubert Body starting...');
+  logger.info('Cubert Body starting...');
 
   startMetricsServer(9091);
 
@@ -17,6 +19,7 @@ async function main() {
 
   let sensors: SensorAggregator | null = null;
   let actuators: ActuatorRegistry | null = null;
+  let chatListener: ChatListener | null = null;
   let lastGatherTime = 0;
   const actionTypes = new Map<string, string>();
 
@@ -60,15 +63,20 @@ async function main() {
 
   // Setup bot listeners - called on initial connect and reconnect
   function setupBotListeners(bot: Bot) {
-    console.log('[SETUP] Attaching bot listeners');
+    logger.info('Attaching bot listeners');
 
     // Reinitialize sensors and actuators with new bot
     sensors = new SensorAggregator(bot, config);
     actuators = new ActuatorRegistry(bot);
 
+    // Initialize chat listener to forward chat messages to brain
+    chatListener = new ChatListener(bot, (msg) => {
+      brainClient.sendChatMessage(msg);
+    });
+
     // Handle action completion
     actuators.on('actionComplete', (result) => {
-      console.log(`[EVENT] Action ${result.actionId} completed: ${result.success ? 'SUCCESS' : 'FAILED'}`);
+      logger.info({ actionId: result.actionId, success: result.success }, 'Action completed');
 
       // Track action metrics
       const actionType = actionTypes.get(result.actionId) ?? 'unknown';
@@ -88,7 +96,7 @@ async function main() {
     // Handle bot respawn (while gRPC is still connected)
     bot.on('spawn', () => {
       if (brainClient.isConnected()) {
-        console.log('[SPAWN] Bot respawned, sending connect event');
+        logger.info('Bot respawned, sending connect event');
         actuators?.cancelAll();
         // Throttled - skip expensive gather if data was recently collected
         gatherAndSendSensors(false, true);
@@ -100,13 +108,13 @@ async function main() {
       try {
         gatherAndSendSensors();
       } catch (err) {
-        console.error('Failed to collect/send sensor data:', err);
+        logger.error({ err }, 'Failed to collect/send sensor data');
       }
     });
 
     // Send connect event if brain is already connected
     if (brainClient.isConnected()) {
-      console.log('[SETUP] Brain already connected, sending connect event');
+      logger.info('Brain already connected, sending connect event');
       actuators.cancelAll();
       // Forced - brain needs initial state on connection
       gatherAndSendSensors(true, true);
@@ -115,18 +123,18 @@ async function main() {
 
   // Listen for bot ready events (initial + reconnects)
   botManager.on('botReady', (bot: Bot) => {
-    console.log('[RECONNECT] Bot ready, setting up listeners');
+    logger.info('Bot ready, setting up listeners');
     botConnected.set(1);
     setupBotListeners(bot);
   });
 
   // Connect to Minecraft
   const bot = await botManager.connect();
-  console.log('Connected to Minecraft!');
+  logger.info('Connected to Minecraft!');
 
   // Handle brain connection/reconnection - reset state
   brainClient.on('connected', () => {
-    console.log('[CONNECT] Brain connected, sending connect event');
+    logger.info('Brain connected, sending connect event');
     actuators?.cancelAll();
     // Throttled - skip expensive gather if data was recently collected
     gatherAndSendSensors(false, true);
@@ -135,9 +143,9 @@ async function main() {
   // Connect to brain
   try {
     await brainClient.connect();
-    console.log('Connected to brain!');
+    logger.info('Connected to brain!');
   } catch (err) {
-    console.warn('Initial brain connection failed, will retry...');
+    logger.warn('Initial brain connection failed, will retry...');
   }
 
   // Handle incoming actions from brain
@@ -146,13 +154,13 @@ async function main() {
       actionTypes.set(action.actionId, action.type);
       await actuators?.execute(action);
     } catch (err) {
-      console.error('Failed to execute action:', err);
+      logger.error({ err }, 'Failed to execute action');
     }
   });
 
   // Graceful shutdown
   const shutdown = () => {
-    console.log('Shutting down...');
+    logger.info('Shutting down...');
     botConnected.set(0);
     brainClient.disconnect();
     botManager.disconnect();
@@ -162,10 +170,10 @@ async function main() {
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 
-  console.log('Cubert Body ready!');
+  logger.info('Cubert Body ready!');
 }
 
 main().catch((err) => {
-  console.error('Fatal error:', err);
+  logger.fatal({ err }, 'Fatal error');
   process.exit(1);
 });
