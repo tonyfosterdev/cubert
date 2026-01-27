@@ -1,6 +1,6 @@
 # Cubert
 
-A modular Minecraft bot system with clean separation between perception/actuation (Body) and decision-making (Brain).
+A modular Minecraft bot system with clean separation between perception/actuation (Body) and LLM-powered decision-making (Brain).
 
 
 [![Check out Cubert mining gold, until it all goes wrong!](https://img.youtube.com/vi/jbTugBI1GaI/hqdefault.jpg)](https://www.youtube.com/watch?v=jbTugBI1GaI)
