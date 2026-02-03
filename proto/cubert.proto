@@ -248,6 +248,21 @@ message WithdrawItemsAction {
 }
 
 // ============================================================================
+// SUPERVISOR SERVICE - Hub relay with mTLS authentication
+// ============================================================================
+
+service SupervisorService {
+  // Body connects here: sends BodyMessages, receives Actions
+  rpc BodyUplink(stream BodyMessage) returns (stream Action);
+
+  // Brain connects here: sends Actions, receives BodyMessages
+  rpc BrainUplink(stream Action) returns (stream BodyMessage);
+
+  // Health check
+  rpc Ping(PingRequest) returns (PingResponse);
+}
+
+// ============================================================================
 // UTILITY MESSAGES
 // ============================================================================
 

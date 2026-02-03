@@ -4,6 +4,9 @@ import { EventEmitter } from 'events';
 import { BodyConfig } from '../config';
 import { SensorData } from '../sensors';
 import { Action } from '../actuators';
+import { SvidWatcher } from '../spiffe/SvidWatcher';
+import { createClientCredentials } from '../spiffe/credentials';
+import { SvidData } from '../spiffe/types';
 import { logger } from '../logger';
 
 export interface ActionEvent {
@@ -28,37 +31,73 @@ export class BrainClient extends EventEmitter {
   private stream: grpc.ClientDuplexStream<any, any> | null = null;
   private reconnectAttempts = 0;
   private connected = false;
+  private supervisorMode: boolean;
+  private svidWatcher: SvidWatcher | null = null;
 
   constructor(config: BodyConfig) {
     super();
     this.config = config;
+    this.supervisorMode = !!config.supervisor;
   }
 
   async connect(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
-        keepCase: false,
-        longs: String,
-        enums: String,
-        defaults: true,
-        oneofs: true,
-      });
+    const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
+      keepCase: false,
+      longs: String,
+      enums: String,
+      defaults: true,
+      oneofs: true,
+    });
 
-      const protoDescriptor = grpc.loadPackageDefinition(packageDefinition) as any;
+    const protoDescriptor = grpc.loadPackageDefinition(packageDefinition) as any;
+
+    if (this.supervisorMode && this.config.supervisor && this.config.spiffe) {
+      // Supervisor mode: connect via mTLS to SupervisorService
+      if (!this.svidWatcher) {
+        this.svidWatcher = new SvidWatcher(this.config.spiffe.agentSocket);
+        this.svidWatcher.on('error', (err) => {
+          logger.error({ err }, 'SvidWatcher error');
+        });
+        this.svidWatcher.on('rotated', (newSvid: SvidData) => {
+          logger.info({ spiffeId: newSvid.spiffeId }, 'SVID rotated, reconnecting to supervisor');
+          this.disconnect();
+          this.connect().catch((err) => {
+            logger.error({ err }, 'Failed to reconnect after SVID rotation');
+          });
+        });
+
+        logger.info('Waiting for SVID from SPIRE agent...');
+        const svid = await this.svidWatcher.start();
+        logger.info({ spiffeId: svid.spiffeId }, 'Got initial SVID');
+      }
+
+      const svid = this.svidWatcher.getSvid();
+      if (!svid) {
+        throw new Error('No SVID available');
+      }
+
+      const SupervisorService = protoDescriptor.cubert.SupervisorService;
+      const address = `${this.config.supervisor.host}:${this.config.supervisor.port}`;
+      const credentials = createClientCredentials(svid);
+
+      logger.info({ address, spiffeId: svid.spiffeId }, 'Connecting to supervisor');
+      this.client = new SupervisorService(address, credentials);
+    } else {
+      // Direct mode: connect insecure to BrainService
       const BrainService = protoDescriptor.cubert.BrainService;
-
       const address = `${this.config.grpc.brainHost}:${this.config.grpc.brainPort}`;
       logger.info({ address }, 'Connecting to brain');
-
       this.client = new BrainService(address, grpc.credentials.createInsecure());
+    }
 
+    return new Promise((resolve, reject) => {
       // Wait for the connection to be ready
       const deadline = new Date();
       deadline.setSeconds(deadline.getSeconds() + 10);
 
       this.client.waitForReady(deadline, (err: Error | undefined) => {
         if (err) {
-          logger.error({ err }, 'Failed to connect to brain');
+          logger.error({ err }, this.supervisorMode ? 'Failed to connect to supervisor' : 'Failed to connect to brain');
           this.scheduleReconnect();
           reject(err);
           return;
@@ -67,14 +106,15 @@ export class BrainClient extends EventEmitter {
         this.setupStream();
         this.connected = true;
         this.reconnectAttempts = 0;
-        logger.info('Connected to brain!');
+        logger.info(this.supervisorMode ? 'Connected to supervisor!' : 'Connected to brain!');
         resolve();
       });
     });
   }
 
   private setupStream(): void {
-    this.stream = this.client.Connect();
+    // BodyUplink in supervisor mode, Connect in direct mode
+    this.stream = this.supervisorMode ? this.client.BodyUplink() : this.client.Connect();
 
     this.stream!.on('data', (action: any) => {
       this.emit('action', this.deserializeAction(action));
@@ -256,6 +296,10 @@ export class BrainClient extends EventEmitter {
     if (this.stream) {
       this.stream.end();
       this.stream = null;
+    }
+    if (this.svidWatcher) {
+      this.svidWatcher.stop();
+      this.svidWatcher = null;
     }
     this.connected = false;
   }

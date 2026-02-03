@@ -18,6 +18,13 @@ export interface BodyConfig {
     blockSearchCount: number;
     playerSearchCount: number;
   };
+  supervisor?: {
+    host: string;
+    port: number;
+  };
+  spiffe?: {
+    agentSocket: string;
+  };
 }
 
 export const defaultConfig: BodyConfig = {
@@ -40,4 +47,13 @@ export const defaultConfig: BodyConfig = {
     blockSearchCount: 5,
     playerSearchCount: 10, // Max nearby players to track
   },
+  ...(process.env.SUPERVISOR_HOST ? {
+    supervisor: {
+      host: process.env.SUPERVISOR_HOST,
+      port: parseInt(process.env.SUPERVISOR_PORT || '5100'),
+    },
+    spiffe: {
+      agentSocket: process.env.SPIFFE_ENDPOINT_SOCKET || 'unix:///tmp/spire-agent/public/api.sock',
+    },
+  } : {}),
 };

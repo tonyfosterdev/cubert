@@ -1,0 +1,126 @@
+services:
+  spire-server:
+    image: ghcr.io/spiffe/spire-server:1.9.0
+    command: ["-config", "/opt/spire/conf/server/server.conf"]
+    volumes:
+      - ./spire/server/server.conf:/opt/spire/conf/server/server.conf:ro
+      - spire-server-data:/opt/spire/data/server
+      - spire-server-socket:/opt/spire/sockets
+    healthcheck:
+      test: ["CMD", "/opt/spire/bin/spire-server", "healthcheck", "-socketPath", "/opt/spire/sockets/server.sock"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - spire-network
+
+  spire-bootstrap:
+    build:
+      context: ./spire
+      dockerfile: bootstrap.Dockerfile
+    volumes:
+      - spire-server-socket:/opt/spire/sockets
+      - spire-join-token:/run/spire/join-token
+    depends_on:
+      spire-server:
+        condition: service_healthy
+    networks:
+      - spire-network
+
+  spire-agent:
+    build:
+      context: ./spire
+      dockerfile: agent.Dockerfile
+    volumes:
+      - spire-agent-socket:/tmp/spire-agent/public
+      - spire-join-token:/run/spire/join-token:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    pid: "host"
+    depends_on:
+      spire-bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/opt/spire/bin/spire-agent", "healthcheck", "-socketPath", "/tmp/spire-agent/public/api.sock"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - spire-network
+      - brain-network
+      - body-network
+
+  supervisor:
+    build:
+      context: ./packages/supervisor
+      dockerfile: Dockerfile.dev
+    environment:
+      SUPERVISOR_PORT: "5100"
+      NODE_ENV: "development"
+      PROTO_PATH: "/app/proto/cubert.proto"
+      WORKLOAD_PROTO_PATH: "/app/proto/workload.proto"
+      SPIFFE_ENDPOINT_SOCKET: "unix:///run/spire/agent/api.sock"
+    volumes:
+      - ./packages/supervisor/src:/app/src
+      - ./proto:/app/proto
+      - supervisor-node-modules:/app/node_modules
+      - spire-agent-socket:/run/spire/agent
+    command: npx tsx src/index.ts
+    labels:
+      com.cubert.service: "supervisor"
+    depends_on:
+      spire-agent:
+        condition: service_healthy
+    networks:
+      - brain-network
+      - body-network
+
+  brain:
+    environment:
+      SUPERVISOR_HOST: "supervisor"
+      SUPERVISOR_PORT: "5100"
+      SPIFFE_ENDPOINT_SOCKET: "unix:///run/spire/agent/api.sock"
+      WORKLOAD_PROTO_PATH: "/app/proto/workload.proto"
+    volumes:
+      - spire-agent-socket:/run/spire/agent
+    labels:
+      com.cubert.service: "brain"
+    depends_on:
+      supervisor:
+        condition: service_started
+    networks:
+      default:
+      brain-network:
+
+  body:
+    environment:
+      SUPERVISOR_HOST: "supervisor"
+      SUPERVISOR_PORT: "5100"
+      SPIFFE_ENDPOINT_SOCKET: "unix:///run/spire/agent/api.sock"
+      WORKLOAD_PROTO_PATH: "/app/proto/workload.proto"
+    volumes:
+      - spire-agent-socket:/run/spire/agent
+    labels:
+      com.cubert.service: "body"
+    depends_on:
+      supervisor:
+        condition: service_started
+    networks:
+      default:
+      body-network:
+
+networks:
+  brain-network:
+    driver: bridge
+  body-network:
+    driver: bridge
+  spire-network:
+    driver: bridge
+
+volumes:
+  spire-server-data:
+  spire-server-socket:
+  spire-agent-socket:
+  spire-join-token:
+  supervisor-node-modules:
