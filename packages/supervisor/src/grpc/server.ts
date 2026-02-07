@@ -129,15 +129,18 @@ export class SupervisorServer {
 
     // Relay BodyMessages from body to brain
     stream.on('data', (bodyMessage: any) => {
-      logger.debug({ type: Object.keys(bodyMessage).find(k => k !== 'payload') }, 'Relaying body → brain');
+      const relayLog = this.describeBodyMessage(bodyMessage);
       messagesRelayed.inc({ direction: 'body_to_brain' });
 
       if (this.brainStream) {
+        logger.info({ direction: 'body_to_brain', ...relayLog }, 'Relaying body → brain');
         try {
           this.brainStream.write(bodyMessage);
         } catch (err) {
           logger.error({ err }, 'Failed to relay body message to brain');
         }
+      } else {
+        logger.info({ direction: 'body_to_brain', ...relayLog }, 'Relay skipped: brain stream not connected');
       }
     });
 
@@ -175,15 +178,18 @@ export class SupervisorServer {
 
     // Relay Actions from brain to body
     stream.on('data', (action: any) => {
-      logger.debug({ actionId: action.actionId }, 'Relaying brain → body');
+      const relayLog = this.describeAction(action);
       messagesRelayed.inc({ direction: 'brain_to_body' });
 
       if (this.bodyStream) {
+        logger.info({ direction: 'brain_to_body', ...relayLog }, 'Relaying brain → body');
         try {
           this.bodyStream.write(action);
         } catch (err) {
           logger.error({ err }, 'Failed to relay brain action to body');
         }
+      } else {
+        logger.info({ direction: 'brain_to_body', ...relayLog }, 'Relay skipped: body stream not connected');
       }
     });
 
@@ -212,6 +218,85 @@ export class SupervisorServer {
       ready: this.bodyStream !== null && this.brainStream !== null,
       scenario: 'supervisor',
     });
+  }
+
+  private describeBodyMessage(msg: any): Record<string, unknown> {
+    if (msg.sensorData) {
+      const s = msg.sensorData;
+      const pos = s.position;
+      return {
+        messageType: 'sensorData',
+        botId: s.botId,
+        position: pos ? `${Math.round(pos.x)},${Math.round(pos.y)},${Math.round(pos.z)}` : undefined,
+        health: s.health?.health,
+        food: s.health?.food,
+        inventorySlots: s.inventory?.slots?.length,
+        nearbyPlayers: s.nearbyPlayers?.length,
+        pathState: s.pathStatus?.state,
+        isMoving: s.pathStatus?.isMoving,
+        isMining: s.pathStatus?.isMining,
+      };
+    }
+    if (msg.actionEvent) {
+      const e = msg.actionEvent;
+      return {
+        messageType: 'actionEvent',
+        actionId: e.actionId,
+        eventType: e.eventType,
+        result: e.result,
+        error: e.errorMessage || undefined,
+      };
+    }
+    if (msg.connectEvent) {
+      const c = msg.connectEvent;
+      const pos = c.initialSensorData?.position;
+      return {
+        messageType: 'connectEvent',
+        botId: c.initialSensorData?.botId,
+        position: pos ? `${Math.round(pos.x)},${Math.round(pos.y)},${Math.round(pos.z)}` : undefined,
+      };
+    }
+    if (msg.chatMessage) {
+      return {
+        messageType: 'chatMessage',
+        sender: msg.chatMessage.sender,
+        message: msg.chatMessage.message,
+      };
+    }
+    return { messageType: 'unknown' };
+  }
+
+  private describeAction(action: any): Record<string, unknown> {
+    const base: Record<string, unknown> = {
+      actionId: action.actionId,
+      actionType: action.type,
+    };
+
+    if (action.moveTo) {
+      const m = action.moveTo;
+      base.target = `${m.x},${m.y},${m.z}`;
+      base.canDig = m.locomotion?.canDig;
+    } else if (action.mineBlock) {
+      const m = action.mineBlock;
+      base.target = `${m.x},${m.y},${m.z}`;
+    } else if (action.depositItems) {
+      const d = action.depositItems;
+      base.chest = `${d.chestX},${d.chestY},${d.chestZ}`;
+      base.items = d.itemNames?.length ? d.itemNames : 'all';
+    } else if (action.withdrawItems) {
+      const w = action.withdrawItems;
+      base.chest = `${w.chestX},${w.chestY},${w.chestZ}`;
+      base.items = w.itemNames?.length ? w.itemNames : 'all';
+      base.count = w.count || 'all';
+    } else if (action.speak) {
+      base.message = action.speak.message;
+    } else if (action.idle) {
+      base.durationMs = action.idle.durationMs;
+    } else if (action.cancel) {
+      base.targetActionId = action.cancel.targetActionId;
+    }
+
+    return base;
   }
 
   stop(): void {

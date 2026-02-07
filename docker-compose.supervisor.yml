@@ -73,8 +73,9 @@ services:
       spire-agent:
         condition: service_healthy
     networks:
-      - brain-network
-      - body-network
+      default:
+      brain-network:
+      body-network:
 
   brain:
     environment:
