@@ -329,7 +329,46 @@ async function loadOtsDetails(filename) {
       await processChainValues(forks[forkKeys[f]], lastSharedHash);
     }
 
+    // Collect attestation status per fork path
+    var bitcoinAttestations = [];
+    var pendingCount = 0;
+    for (var f = 0; f < forkKeys.length; f++) {
+      var pathSteps = forks[forkKeys[f]];
+      var pathBitcoin = null;
+      for (var i = 0; i < pathSteps.length; i++) {
+        if (pathSteps[i].type === 'bitcoin') { pathBitcoin = pathSteps[i].detail; }
+      }
+      if (pathBitcoin) {
+        bitcoinAttestations.push(pathBitcoin);
+      } else {
+        pendingCount++;
+      }
+    }
+    var totalPaths = forkKeys.length;
+
     var html = '<div class="ots-chain">';
+
+    // Verification status
+    html += '<div class="ots-status">';
+    if (bitcoinAttestations.length > 0) {
+      html += '<div class="ots-status-badge verified">' +
+        bitcoinAttestations.length + ' of ' + totalPaths + ' path' + (totalPaths > 1 ? 's' : '') + ' verified on Bitcoin' +
+        '</div>';
+      for (var i = 0; i < bitcoinAttestations.length; i++) {
+        html += '<a class="ots-block-link" href="https://blockstream.info/block-height/' +
+          escapeAttr(bitcoinAttestations[i]) + '" target="_blank">Block #' +
+          escapeHtml(bitcoinAttestations[i]) + '</a>';
+      }
+    } else {
+      html += '<div class="ots-status-badge pending">' +
+        totalPaths + ' path' + (totalPaths > 1 ? 's' : '') + ' pending Bitcoin confirmation' +
+        '</div>';
+    }
+    if (pendingCount > 0 && bitcoinAttestations.length > 0) {
+      html += '<div class="ots-status-pending">' + pendingCount + ' path' +
+        (pendingCount > 1 ? 's' : '') + ' still pending</div>';
+    }
+    html += '</div>';
 
     // Header with file hash
     html += '<div class="ots-header">' +

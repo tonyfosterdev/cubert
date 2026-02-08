@@ -128,6 +128,22 @@ export function verifyRouter(logDir: string, manifest: Manifest, timestampServic
         return;
       }
 
+      // Attempt to upgrade pending attestations before parsing
+      if (timestampService) {
+        const entries = await manifest.load();
+        const entry = entries.find((e) => e.filename === filename);
+        if (entry) {
+          const { upgraded, bytes } = await timestampService.upgradeAndVerify(
+            otsBytes,
+            entry.merkleRoot,
+          );
+          if (upgraded) {
+            await fs.writeFile(otsPath, bytes);
+            otsBytes = bytes;
+          }
+        }
+      }
+
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const OpenTimestamps = require('opentimestamps');
       const detached = OpenTimestamps.DetachedTimestampFile.deserialize(

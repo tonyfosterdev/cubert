@@ -60,9 +60,7 @@ export class TimestampService {
         new Uint8Array(otsBytes),
       );
 
-      const changed: boolean = await OpenTimestamps.upgrade(detachedOts, {
-        calendars: this.calendars,
-      });
+      const changed: boolean = await OpenTimestamps.upgrade(detachedOts);
 
       const newBytes = Buffer.from(detachedOts.serializeToBytes());
 
