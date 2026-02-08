@@ -1,0 +1,255 @@
+#!/usr/bin/env node
+'use strict';
+
+const { createHash } = require('node:crypto');
+const { readFileSync, writeFileSync, existsSync } = require('node:fs');
+
+// ── Helpers ──
+
+function sha256(data) {
+  return createHash('sha256').update(data).digest();
+}
+
+function hashPair(left, right) {
+  return createHash('sha256').update(Buffer.concat([left, right])).digest();
+}
+
+function isUrl(str) {
+  return str.startsWith('http://') || str.startsWith('https://');
+}
+
+function fetchUrl(url) {
+  return new Promise(function (resolve, reject) {
+    var mod = url.startsWith('https://') ? require('node:https') : require('node:http');
+    mod.get(url, function (res) {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return fetchUrl(res.headers.location).then(resolve, reject);
+      }
+      if (res.statusCode !== 200) {
+        return reject(new Error('HTTP ' + res.statusCode + ' fetching ' + url));
+      }
+      var chunks = [];
+      res.on('data', function (c) { chunks.push(c); });
+      res.on('end', function () { resolve(Buffer.concat(chunks)); });
+      res.on('error', reject);
+    }).on('error', reject);
+  });
+}
+
+function fetchText(url) {
+  return fetchUrl(url).then(function (buf) { return buf.toString('utf-8'); });
+}
+
+function loadTreeContent(batchSource) {
+  if (isUrl(batchSource)) {
+    return fetchText(batchSource + '.tree');
+  }
+  var treePath = batchSource + '.tree';
+  return Promise.resolve(readFileSync(treePath, 'utf-8'));
+}
+
+function loadOtsBytes(batchSource) {
+  if (isUrl(batchSource)) {
+    return fetchUrl(batchSource + '.ots').catch(function () { return null; });
+  }
+  var otsPath = batchSource + '.ots';
+  if (existsSync(otsPath)) {
+    return Promise.resolve(readFileSync(otsPath));
+  }
+  return Promise.resolve(null);
+}
+
+// ── Merkle tree rebuild & proof ──
+
+function buildTree(leaves) {
+  const levels = [leaves];
+  let current = leaves;
+
+  while (current.length > 1) {
+    const next = [];
+    for (let i = 0; i < current.length; i += 2) {
+      const left = current[i];
+      const right = i + 1 < current.length ? current[i + 1] : current[i];
+      next.push(hashPair(left, right));
+    }
+    levels.push(next);
+    current = next;
+  }
+
+  return levels;
+}
+
+function getProof(levels, leafIndex) {
+  const siblings = [];
+  let idx = leafIndex;
+
+  for (let level = 0; level < levels.length - 1; level++) {
+    const layer = levels[level];
+    const isLeft = idx % 2 === 0;
+    const siblingIdx = isLeft ? idx + 1 : idx - 1;
+    const sibling = siblingIdx < layer.length ? layer[siblingIdx] : layer[idx];
+
+    siblings.push({
+      hash: sibling.toString('hex'),
+      position: isLeft ? 'right' : 'left',
+    });
+
+    idx = Math.floor(idx / 2);
+  }
+
+  return siblings;
+}
+
+function walkProof(leafHash, siblings) {
+  let current = leafHash;
+
+  for (const s of siblings) {
+    const siblingBuf = Buffer.from(s.hash, 'hex');
+    if (s.position === 'right') {
+      current = hashPair(current, siblingBuf);
+    } else {
+      current = hashPair(siblingBuf, current);
+    }
+  }
+
+  return current;
+}
+
+// ── OTS ──
+
+async function checkOts(otsBytes, merkleRootHex, batchSource) {
+  var OpenTimestamps;
+  try {
+    OpenTimestamps = require('opentimestamps');
+  } catch {
+    return null;
+  }
+
+  try {
+    var detachedOts = OpenTimestamps.DetachedTimestampFile.deserialize(new Uint8Array(otsBytes));
+    var changed = await OpenTimestamps.upgrade(detachedOts);
+    var newBytes = Buffer.from(detachedOts.serializeToBytes());
+
+    // If upgraded on a local file, overwrite it
+    if (changed && !isUrl(batchSource)) {
+      var otsPath = batchSource + '.ots';
+      writeFileSync(otsPath, newBytes);
+    }
+
+    var hashBytes = Buffer.from(merkleRootHex, 'hex');
+    var detachedOriginal = OpenTimestamps.DetachedTimestampFile.fromBytes(
+      new OpenTimestamps.Ops.OpSHA256(),
+      hashBytes,
+    );
+
+    var verifyResult = await OpenTimestamps.verify(detachedOts, detachedOriginal, {
+      ignoreBitcoinNode: true,
+    });
+
+    if (verifyResult && verifyResult.bitcoin) {
+      return {
+        status: 'verified',
+        height: verifyResult.bitcoin.height,
+        timestamp: new Date(verifyResult.bitcoin.timestamp * 1000).toISOString(),
+      };
+    }
+
+    return { status: 'pending' };
+  } catch {
+    return { status: 'pending' };
+  }
+}
+
+// ── Main ──
+
+async function main() {
+  const args = process.argv.slice(2);
+
+  if (args.length !== 2) {
+    console.error("Usage: node verify.js <batch-path-or-url> '<json-log-line>'");
+    console.error('');
+    console.error('  Local:  node verify.js /data/logs/supervisor.51 \'<log-line>\'');
+    console.error('          (reads supervisor.51.tree and supervisor.51.ots)');
+    console.error('');
+    console.error('  URL:    node verify.js http://localhost:3201/api/download/supervisor.51 \'<log-line>\'');
+    console.error('          (fetches /api/download/tree/supervisor.51 and /api/download/ots/supervisor.51)');
+    process.exit(1);
+  }
+
+  const [batchSource, logLine] = args;
+
+  // 1. Hash the provided log line
+  const leafHash = sha256(logLine);
+  const leafHex = leafHash.toString('hex');
+
+  // 2. Read .tree content (local file or URL)
+  let treeContent;
+  try {
+    treeContent = await loadTreeContent(batchSource);
+  } catch (err) {
+    console.error('Error: cannot read tree source: ' + batchSource + '.tree');
+    console.error(err.message);
+    process.exit(1);
+  }
+
+  const leafHexes = treeContent.trim().split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+  const leafBuffers = leafHexes.map(function (hex) { return Buffer.from(hex, 'hex'); });
+
+  if (leafBuffers.length === 0) {
+    console.error('Error: tree file is empty');
+    process.exit(1);
+  }
+
+  // 3. Find the leaf in the list
+  const lineIndex = leafHexes.indexOf(leafHex);
+  if (lineIndex === -1) {
+    console.log('Leaf hash:  ' + leafHex);
+    console.log('Status:     NOT FOUND');
+    console.log('The log line does not match any leaf in the tree.');
+    process.exit(1);
+  }
+
+  // 4. Rebuild the Merkle tree
+  const levels = buildTree(leafBuffers);
+  const root = levels[levels.length - 1][0];
+
+  // 5. Generate proof path
+  const siblings = getProof(levels, lineIndex);
+
+  // 6. Walk the proof to recompute root
+  const computedRoot = walkProof(leafHash, siblings);
+
+  // 7. Print Merkle results
+  const valid = computedRoot.equals(root);
+
+  console.log('Leaf hash:    ' + leafHex);
+  console.log('Line index:   ' + lineIndex);
+  console.log('Proof path:');
+  for (let i = 0; i < siblings.length; i++) {
+    const s = siblings[i];
+    console.log('  [' + i + '] ' + s.position.padEnd(5) + ' ' + s.hash);
+  }
+  console.log('Merkle root:  ' + root.toString('hex'));
+  console.log('Computed:     ' + computedRoot.toString('hex'));
+  console.log('Status:       ' + (valid ? 'VALID' : 'INVALID'));
+
+  // 8. Check OTS status
+  var otsBytes = await loadOtsBytes(batchSource);
+  if (otsBytes) {
+    var merkleRootHex = root.toString('hex');
+    var otsResult = await checkOts(otsBytes, merkleRootHex, batchSource);
+    if (otsResult && otsResult.status === 'verified') {
+      console.log('OTS Status:   VERIFIED ON CHAIN (block #' + otsResult.height + ', ' + otsResult.timestamp + ')');
+    } else if (otsResult && otsResult.status === 'pending') {
+      console.log('OTS Status:   PENDING (awaiting Bitcoin confirmation)');
+    } else {
+      console.log('OTS Status:   NOT TIMESTAMPED');
+    }
+  } else {
+    console.log('OTS Status:   NOT TIMESTAMPED');
+  }
+
+  process.exit(valid ? 0 : 1);
+}
+
+main();

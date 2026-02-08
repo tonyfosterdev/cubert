@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+// No package - SPIFFE Workload API service path is /SpiffeWorkloadAPI/FetchX509SVID
+
+// Minimal SPIFFE Workload API definition.
+// Used by services to fetch X.509 SVIDs from the local SPIRE agent.
+// See: https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Workload_API.md
+
+service SpiffeWorkloadAPI {
+  // Fetch X.509 SVIDs. Server-streaming: first response is the initial SVID,
+  // subsequent responses are rotated certificates.
+  // Requires metadata header: workload.spiffe.io = true
+  rpc FetchX509SVID(X509SVIDRequest) returns (stream X509SVIDResponse);
+}
+
+message X509SVIDRequest {}
+
+message X509SVIDResponse {
+  repeated X509SVID svids = 1;
+}
+
+message X509SVID {
+  // SPIFFE ID (e.g., "spiffe://cubert.local/supervisor")
+  string spiffe_id = 1;
+
+  // DER-encoded X.509 certificate chain
+  bytes x509_svid = 2;
+
+  // DER-encoded PKCS#8 private key
+  bytes x509_svid_key = 3;
+
+  // DER-encoded X.509 bundle (trust anchors)
+  bytes bundle = 4;
+}

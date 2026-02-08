@@ -87,6 +87,20 @@ graph LR
 
 For detailed architecture documentation including component internals, data flows, and design decisions, see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
+### Accountability and Verifiability
+
+When Cubert walked into lava, we couldn't prove whether the Brain saw the hazard and chose to proceed, or never received the sensor data at all. The accountability stack fixes this.
+
+![Accountability Architecture](architecture-accountability.svg)
+
+Four layers — network isolation, an authenticated supervisor relay, cryptographic identity via SPIFFE/mTLS, and Bitcoin-anchored tamper-evident logs — ensure every Brain/Body message is authenticated, recorded, and independently verifiable. For the full design rationale, see **[Accountability and Verifiability Architecture](ARCHITECTURE-accountability-verifiability.md)**.
+
+To run with the full accountability stack:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.supervisor.yml up --build
+```
+
 ## Project Structure
 
 ```
@@ -111,8 +125,10 @@ cubert/
 ├── tools/
 │   └── scenario-runner/      # RCON world setup
 ├── scripts/                  # Helper scripts
-├── ARCHITECTURE.md           # Detailed architecture docs
-└── docker-compose.yml        # Full stack configuration
+├── ARCHITECTURE.md                           # Core architecture docs
+├── ARCHITECTURE-accountability-verifiability.md  # Accountability stack design
+├── docker-compose.yml                        # Base stack configuration
+└── docker-compose.supervisor.yml             # Supervisor overlay (mTLS, logging, isolation)
 ```
 
 ## Local Development

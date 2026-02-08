@@ -6,6 +6,12 @@ import { ChatMessage } from '../thought';
 import { BrainConfig } from '../config';
 import path from 'path';
 import { logger } from '../logger';
+import {
+  deserializeSensorData,
+  deserializeActionEvent,
+  deserializeChatMessage,
+  serializeAction,
+} from './serialization';
 
 const PROTO_PATH = process.env.PROTO_PATH || path.resolve(__dirname, '../../../../proto/cubert.proto');
 
@@ -85,28 +91,28 @@ export class BrainServer {
 
           // Process initial sensor data if provided
           if (bodyMessage.connectEvent.initialSensorData) {
-            const sensorData = this.deserializeSensorData(bodyMessage.connectEvent.initialSensorData);
+            const sensorData = deserializeSensorData(bodyMessage.connectEvent.initialSensorData);
             actions = (await this.brain.onConnect?.(sensorData)) || [];
           }
         } else if (bodyMessage.sensorData) {
           // Regular sensor update
-          const sensorData = this.deserializeSensorData(bodyMessage.sensorData);
+          const sensorData = deserializeSensorData(bodyMessage.sensorData);
           actions = (await this.brain.onSensorUpdate?.(sensorData)) || [];
         } else if (bodyMessage.actionEvent) {
           // Immediate action event
-          const event = this.deserializeActionEvent(bodyMessage.actionEvent);
+          const event = deserializeActionEvent(bodyMessage.actionEvent);
           logger.info({ eventType: event.eventType, actionId: event.actionId, result: event.result }, 'Action event');
           actions = (await this.brain.onActionComplete?.(event)) || [];
         } else if (bodyMessage.chatMessage) {
           // Chat message from player
-          const chat = this.deserializeChatMessage(bodyMessage.chatMessage);
+          const chat = deserializeChatMessage(bodyMessage.chatMessage);
           logger.info({ sender: chat.sender, message: chat.message }, 'Chat message');
           actions = (await this.brain.onChatMessage?.(chat)) || [];
         }
 
         // Send all actions
         for (const action of actions) {
-          const actionMsg = this.serializeAction(action);
+          const actionMsg = serializeAction(action);
           stream.write(actionMsg);
         }
       } catch (err) {
@@ -135,86 +141,6 @@ export class BrainServer {
       ready: true,
       scenario: this.config.scenario,
     });
-  }
-
-  private deserializeSensorData(msg: any): SensorData {
-    return {
-      timestamp: msg.timestamp,
-      botId: msg.botId,
-      position: {
-        x: msg.position?.x || 0,
-        y: msg.position?.y || 0,
-        z: msg.position?.z || 0,
-        yaw: msg.position?.yaw || 0,
-        pitch: msg.position?.pitch || 0,
-        onGround: msg.position?.onGround || false,
-      },
-      inventory: {
-        slots: (msg.inventory?.slots || []).map((s: any) => ({
-          slotIndex: s.slotIndex,
-          itemName: s.itemName,
-          count: s.count,
-        })),
-        selectedSlot: msg.inventory?.selectedSlot || 0,
-      },
-      health: {
-        health: msg.health?.health || 20,
-        food: msg.health?.food || 20,
-        saturation: msg.health?.saturation || 5,
-        oxygen: msg.health?.oxygen || 20,
-      },
-      nearbyBlocks: {
-        goldBlocks: msg.nearbyBlocks?.goldBlocks || [],
-        lavaBlocks: msg.nearbyBlocks?.lavaBlocks || [],
-        chestBlocks: msg.nearbyBlocks?.chestBlocks || [],
-        hazardBlocks: msg.nearbyBlocks?.hazardBlocks || [],
-      },
-      pathStatus: {
-        state: msg.pathStatus?.state || 'PATH_STATE_IDLE',
-        isMoving: msg.pathStatus?.isMoving || false,
-        isMining: msg.pathStatus?.isMining || false,
-        targetBlock: msg.pathStatus?.targetBlock || null,
-      },
-      nearbyPlayers: (msg.nearbyPlayers || []).map((p: any) => ({
-        username: p.username || '',
-        x: p.x || 0,
-        y: p.y || 0,
-        z: p.z || 0,
-        distance: p.distance || 0,
-      })),
-    };
-  }
-
-  private deserializeActionEvent(msg: any): ActionEvent {
-    return {
-      actionId: msg.actionId || msg.action_id,
-      result: msg.result,
-      errorMessage: msg.errorMessage || msg.error_message,
-      eventType: msg.eventType || msg.event_type,
-    };
-  }
-
-  private deserializeChatMessage(msg: any): ChatMessage {
-    return {
-      timestamp: parseInt(msg.timestamp) || Date.now(),
-      sender: msg.sender || 'unknown',
-      message: msg.message || '',
-    };
-  }
-
-  private serializeAction(action: Action): any {
-    return {
-      actionId: action.actionId,
-      timestamp: action.timestamp,
-      type: action.type,
-      moveTo: action.moveTo,
-      mineBlock: action.mineBlock,
-      depositItems: action.depositItems,
-      withdrawItems: action.withdrawItems,
-      speak: action.speak,
-      idle: action.idle,
-      cancel: action.cancel,
-    };
   }
 
   stop(): void {
