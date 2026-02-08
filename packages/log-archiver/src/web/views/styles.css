@@ -7,7 +7,7 @@
   --accent: #58a6ff;
   --green: #3fb950;
   --red: #f85149;
-  --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Ubuntu Mono', 'DejaVu Sans Mono', 'Liberation Mono', 'Menlo', 'Consolas', 'Courier New', monospace;
 }
 
 * {
@@ -66,6 +66,27 @@ header h1 {
   color: var(--text-muted);
 }
 
+.breadcrumb-filename {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.header-proof-chain {
+  margin-left: auto;
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.header-proof-chain:hover {
+  background: var(--surface);
+  text-decoration: none;
+}
+
 /* Batch list */
 table {
   width: 100%;
@@ -97,6 +118,8 @@ tbody tr:hover {
   color: var(--accent);
   text-decoration: none;
   cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 13px;
 }
 
 .filename-link:hover {
@@ -352,6 +375,11 @@ tbody tr:hover {
   color: var(--red);
 }
 
+.badge-pending {
+  background: rgba(210, 153, 34, 0.2);
+  color: #d29922;
+}
+
 .proof-detail {
   margin-top: 12px;
 }
@@ -569,4 +597,138 @@ tbody tr:hover {
 
 .ots-step-value a:hover {
   text-decoration: underline;
+}
+
+/* Top drawer */
+.top-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  max-height: 60vh;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  z-index: 102;
+  transform: translateY(-100%);
+  transition: transform 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.top-drawer.open {
+  transform: translateY(0);
+}
+
+.top-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.top-drawer-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.top-drawer-body {
+  overflow-y: auto;
+  flex: 1;
+  padding: 20px;
+}
+
+/* Collapsible proof path */
+.proof-path-details summary {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.proof-path-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.proof-path-details summary::before {
+  content: '\25b6';
+  font-size: 9px;
+  transition: transform 0.15s ease;
+}
+
+.proof-path-details[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.proof-path-details .proof-value {
+  margin-top: 6px;
+}
+
+/* OTS fork columns */
+.ots-fork-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.ots-fork-columns {
+  display: grid;
+  gap: 0;
+}
+
+.ots-fork-col {
+  border-right: 1px solid var(--border);
+  min-width: 0;
+}
+
+.ots-fork-col:last-child {
+  border-right: none;
+}
+
+.ots-fork-col-header {
+  padding: 8px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ots-fork-col-header.bitcoin {
+  color: var(--green);
+  background: rgba(63, 185, 80, 0.06);
+}
+
+.ots-fork-col-header.pending {
+  color: #d29922;
+  background: rgba(210, 153, 34, 0.06);
+}
+
+.ots-fork-col-header.op {
+  color: var(--text-muted);
+}
+
+.ots-fork-col .ots-step {
+  font-size: 11px;
+}
+
+.ots-fork-col .ots-step-op {
+  min-width: 60px;
+}
+
+.ots-fork-col .ots-step-value {
+  font-size: 11px;
 }

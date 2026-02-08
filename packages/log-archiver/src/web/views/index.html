@@ -18,13 +18,21 @@
     </div>
   </div>
 
-  <div id="drawer-overlay" class="drawer-overlay" onclick="closeDrawer()"></div>
+  <div id="drawer-overlay" class="drawer-overlay" onclick="closeAllDrawers()"></div>
   <div id="drawer" class="drawer">
     <div class="drawer-header">
       <span class="drawer-title" id="drawer-title">Line Details</span>
       <button class="drawer-close" onclick="closeDrawer()">&times;</button>
     </div>
     <div class="drawer-body" id="drawer-body"></div>
+  </div>
+
+  <div id="top-drawer" class="top-drawer">
+    <div class="top-drawer-header">
+      <span class="top-drawer-title" id="top-drawer-title">Bitcoin Proof Chain</span>
+      <button class="drawer-close" onclick="closeTopDrawer()">&times;</button>
+    </div>
+    <div class="top-drawer-body" id="top-drawer-body"></div>
   </div>
 
   <script src="app.js"></script>

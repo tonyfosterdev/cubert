@@ -6,10 +6,14 @@ const drawer = document.getElementById('drawer');
 const drawerOverlay = document.getElementById('drawer-overlay');
 const drawerTitle = document.getElementById('drawer-title');
 const drawerBody = document.getElementById('drawer-body');
+const topDrawer = document.getElementById('top-drawer');
+const topDrawerTitle = document.getElementById('top-drawer-title');
+const topDrawerBody = document.getElementById('top-drawer-body');
 
 let currentView = 'batches';
 let currentFilename = null;
 let currentOffset = 0;
+let currentBatchHasOts = false;
 const PAGE_SIZE = 100;
 
 // ── Navigation ──
@@ -18,20 +22,24 @@ function showBatches() {
   currentView = 'batches';
   currentFilename = null;
   breadcrumb.style.display = 'none';
-  closeDrawer();
+  closeAllDrawers();
   loadBatches();
 }
 
-function showLogViewer(filename) {
+function showLogViewer(filename, hasOts) {
   currentView = 'logs';
   currentFilename = filename;
+  currentBatchHasOts = !!hasOts;
   currentOffset = 0;
   breadcrumb.style.display = 'flex';
   breadcrumb.innerHTML =
     '<a onclick="showBatches()">Batches</a>' +
     '<span>/</span>' +
-    '<span>' + escapeHtml(filename) + '</span>';
-  closeDrawer();
+    '<span class="breadcrumb-filename">' + escapeHtml(filename) + '</span>' +
+    (currentBatchHasOts
+      ? '<a class="header-proof-chain" onclick="openTopDrawer(\'' + escapeAttr(filename) + '\')">Proof Chain</a>'
+      : '');
+  closeAllDrawers();
   loadLogLines();
 }
 
@@ -65,7 +73,7 @@ async function loadBatches() {
 
       html += '<tr>' +
         '<td>' + escapeHtml(time) + '</td>' +
-        '<td><a class="filename-link" onclick="showLogViewer(\'' + escapeAttr(b.filename) + '\')">' + escapeHtml(b.filename) + '</a></td>' +
+        '<td><a class="filename-link" onclick="showLogViewer(\'' + escapeAttr(b.filename) + '\', ' + !!b.otsAvailable + ')">' + escapeHtml(b.filename) + '</a></td>' +
         '<td>' + b.leafCount + '</td>' +
         '<td>' + size + '</td>' +
         '<td><span class="merkle-root" title="' + escapeAttr(b.merkleRoot) + '">' + rootShort + '</span></td>' +
@@ -73,7 +81,8 @@ async function loadBatches() {
           '<a href="/api/download/' + encodeURIComponent(b.filename) + '">Log</a>' +
           '<a href="/api/download/' + encodeURIComponent(b.filename) + '.tree">Tree</a>' +
           '<a href="/api/download/' + encodeURIComponent(b.filename) + '.root">Root</a>' +
-          (b.otsAvailable ? '<a href="/api/download/' + encodeURIComponent(b.filename) + '.ots">OTS</a>' : '') +
+          (b.otsAvailable ? '<a href="/api/download/' + encodeURIComponent(b.filename) + '.ots">OTS</a>' +
+            '<a class="ots-details-link" onclick="openTopDrawer(\'' + escapeAttr(b.filename) + '\')">Proof Chain</a>' : '') +
         '</td>' +
         '</tr>';
     }
@@ -135,6 +144,30 @@ function openDrawer() {
 
 function closeDrawer() {
   drawer.classList.remove('open');
+  document.querySelectorAll('.log-line.selected').forEach(function(e) { e.classList.remove('selected'); });
+  if (!topDrawer.classList.contains('open')) {
+    drawerOverlay.classList.remove('open');
+  }
+}
+
+function openTopDrawer(filename) {
+  topDrawerTitle.textContent = 'Bitcoin Proof Chain — ' + filename;
+  topDrawerBody.innerHTML = '<div class="proof-loading">Loading OTS proof chain...</div>';
+  topDrawer.classList.add('open');
+  drawerOverlay.classList.add('open');
+  loadOtsDetails(filename);
+}
+
+function closeTopDrawer() {
+  topDrawer.classList.remove('open');
+  if (!drawer.classList.contains('open')) {
+    drawerOverlay.classList.remove('open');
+  }
+}
+
+function closeAllDrawers() {
+  drawer.classList.remove('open');
+  topDrawer.classList.remove('open');
   drawerOverlay.classList.remove('open');
   document.querySelectorAll('.log-line.selected').forEach(function(e) { e.classList.remove('selected'); });
 }
@@ -182,32 +215,16 @@ async function verifyLine(lineNum, el) {
       '</div>';
 
     html += '<div class="proof-cell proof-cell-full">' +
-      '<div class="proof-label">Proof Path (' + data.proof.siblings.length + ' levels)</div>' +
+      '<details class="proof-path-details">' +
+      '<summary>Proof Path (' + data.proof.siblings.length + ' levels)</summary>' +
       '<div class="proof-value"><ul class="proof-path">';
     for (var i = 0; i < data.proof.siblings.length; i++) {
       var s = data.proof.siblings[i];
       html += '<li><span class="step-num">' + i + '</span><span class="direction">' + s.position + '</span><span>' + escapeHtml(s.hash) + '</span></li>';
     }
-    html += '</ul></div></div>';
+    html += '</ul></div></details></div>';
 
     html += '</div></div>';
-
-    // ── OTS Status ──
-    if (data.ots) {
-      html += '<div class="drawer-section">' +
-        '<div class="drawer-section-title">Bitcoin Timestamp ' +
-        '<a class="ots-details-link" onclick="loadOtsDetails(event)">View Proof Chain</a></div>';
-      if (data.ots.status === 'verified') {
-        html += '<div class="proof-value ots-verified">' +
-          'Verified at block <a href="' + escapeAttr(data.ots.explorerUrl) + '" target="_blank">#' + data.ots.bitcoinHeight + '</a>' +
-          ' (' + escapeHtml(data.ots.bitcoinTimestamp) + ')' +
-          '</div>';
-      } else {
-        html += '<div class="proof-value ots-pending">Pending confirmation</div>';
-      }
-      html += '<div id="ots-details-container"></div>';
-      html += '</div>';
-    }
 
     // ── CLI Command ──
     html += '<div class="drawer-section">' +
@@ -238,24 +255,61 @@ function copySnippet(btn, evt) {
 
 // ── OTS Proof Chain ──
 
-async function loadOtsDetails(evt) {
-  evt.preventDefault();
-  var container = document.getElementById('ots-details-container');
-  if (!container) return;
+function renderOtsStep(step) {
+  var barClass = 'op';
+  var opLabel = step.type;
+  var valueHtml = '';
 
-  // Toggle: if already loaded, remove it
-  if (container.innerHTML) {
-    container.innerHTML = '';
-    return;
+  if (step.type === 'append') {
+    opLabel = 'append';
+    valueHtml = '<span class="ots-highlight">' + escapeHtml(step.detail) + '</span>';
+  } else if (step.type === 'prepend') {
+    opLabel = 'prepend';
+    valueHtml = '<span class="ots-highlight">' + escapeHtml(step.detail) + '</span>';
+  } else if (step.type === 'sha256' || step.type === 'ripemd160' || step.type === 'sha1') {
+    opLabel = step.type + '()';
+    valueHtml = '';
+  } else if (step.type === 'pending') {
+    barClass = 'pending';
+    opLabel = 'verify';
+    valueHtml = '<span class="ots-highlight-pending">PendingAttestation</span> ' +
+      '<a href="' + escapeAttr(step.detail) + '" target="_blank">' + escapeHtml(step.detail) + '</a>';
+  } else if (step.type === 'bitcoin') {
+    barClass = 'bitcoin';
+    opLabel = 'verify';
+    valueHtml = '<span class="ots-highlight">BitcoinBlockHeader</span> block ' +
+      '<a href="https://blockstream.info/block-height/' + escapeAttr(step.detail) + '" target="_blank">#' + escapeHtml(step.detail) + '</a>';
+  } else {
+    valueHtml = escapeHtml(step.detail);
   }
 
-  container.innerHTML = '<div class="proof-loading">Loading OTS proof chain...</div>';
+  return '<div class="ots-step">' +
+    '<div class="ots-step-bar ' + barClass + '"></div>' +
+    '<div class="ots-step-op">' + escapeHtml(opLabel) + '</div>' +
+    '<div class="ots-step-value">' + valueHtml + '</div>' +
+    '</div>';
+}
 
+async function loadOtsDetails(filename) {
   try {
-    var res = await fetch('/api/batches/' + encodeURIComponent(currentFilename) + '/ots-info');
+    var res = await fetch('/api/batches/' + encodeURIComponent(filename) + '/ots-info');
     var data = await res.json();
 
-    var html = '<div class="ots-chain" style="margin-top:10px">';
+    // Split steps into shared stem (no path) and per-fork buckets
+    var sharedSteps = [];
+    var forks = {};  // path number -> array of steps
+    for (var i = 0; i < data.steps.length; i++) {
+      var step = data.steps[i];
+      if (step.path === undefined || step.path === null || step.path === 0) {
+        sharedSteps.push(step);
+      } else {
+        if (!forks[step.path]) forks[step.path] = [];
+        forks[step.path].push(step);
+      }
+    }
+    var forkKeys = Object.keys(forks).sort(function(a, b) { return a - b; });
+
+    var html = '<div class="ots-chain">';
 
     // Header with file hash
     html += '<div class="ots-header">' +
@@ -271,59 +325,37 @@ async function loadOtsDetails(evt) {
       '<span class="ots-legend-item"><span class="ots-legend-dot op"></span> Operation</span>' +
       '</div>';
 
-    // Steps
-    var prevPath = 0;
-    for (var i = 0; i < data.steps.length; i++) {
-      var step = data.steps[i];
+    // Shared stem
+    for (var i = 0; i < sharedSteps.length; i++) {
+      html += renderOtsStep(sharedSteps[i]);
+    }
 
-      // Show fork separator when path changes
-      if (step.path && step.path !== prevPath) {
-        html += '<div class="ots-step">' +
-          '<div class="ots-step-bar fork"></div>' +
-          '<div class="ots-step-op" style="color:var(--accent)">Fork</div>' +
-          '<div class="ots-step-value" style="color:var(--accent)">Path ' + step.path + '</div>' +
-          '</div>';
-        prevPath = step.path;
-      }
-
-      var barClass = 'op';
-      var opLabel = step.type;
-      var valueHtml = '';
-
-      if (step.type === 'append') {
-        opLabel = 'append';
-        valueHtml = '<span class="ots-highlight">' + escapeHtml(step.detail) + '</span>';
-      } else if (step.type === 'prepend') {
-        opLabel = 'prepend';
-        valueHtml = '<span class="ots-highlight">' + escapeHtml(step.detail) + '</span>';
-      } else if (step.type === 'sha256' || step.type === 'ripemd160' || step.type === 'sha1') {
-        opLabel = step.type + '()';
-        valueHtml = '';
-      } else if (step.type === 'pending') {
-        barClass = 'pending';
-        opLabel = 'verify';
-        valueHtml = '<span class="ots-highlight-pending">PendingAttestation</span> ' +
-          '<a href="' + escapeAttr(step.detail) + '" target="_blank">' + escapeHtml(step.detail) + '</a>';
-      } else if (step.type === 'bitcoin') {
-        barClass = 'bitcoin';
-        opLabel = 'verify';
-        valueHtml = '<span class="ots-highlight">BitcoinBlockHeader</span> block ' +
-          '<a href="https://blockstream.info/block-height/' + escapeAttr(step.detail) + '" target="_blank">#' + escapeHtml(step.detail) + '</a>';
-      } else {
-        valueHtml = escapeHtml(step.detail);
-      }
-
-      html += '<div class="ots-step">' +
-        '<div class="ots-step-bar ' + barClass + '"></div>' +
-        '<div class="ots-step-op">' + escapeHtml(opLabel) + '</div>' +
-        '<div class="ots-step-value">' + valueHtml + '</div>' +
+    // Fork columns
+    if (forkKeys.length > 0) {
+      html += '<div class="ots-fork-label">' +
+        '<div class="ots-step-bar fork"></div>' +
+        '<span>' + forkKeys.length + ' attestation path' + (forkKeys.length > 1 ? 's' : '') + '</span>' +
         '</div>';
+      html += '<div class="ots-fork-columns" style="grid-template-columns: repeat(' + forkKeys.length + ', 1fr)">';
+      for (var f = 0; f < forkKeys.length; f++) {
+        var pathSteps = forks[forkKeys[f]];
+        // Determine path type from last step
+        var lastStep = pathSteps[pathSteps.length - 1];
+        var pathType = lastStep.type === 'bitcoin' ? 'bitcoin' : (lastStep.type === 'pending' ? 'pending' : 'op');
+        html += '<div class="ots-fork-col">';
+        html += '<div class="ots-fork-col-header ' + pathType + '">Path ' + forkKeys[f] + '</div>';
+        for (var s = 0; s < pathSteps.length; s++) {
+          html += renderOtsStep(pathSteps[s]);
+        }
+        html += '</div>';
+      }
+      html += '</div>';
     }
 
     html += '</div>';
-    container.innerHTML = html;
+    topDrawerBody.innerHTML = html;
   } catch (err) {
-    container.innerHTML = '<div class="proof-loading">Failed to load OTS details.</div>';
+    topDrawerBody.innerHTML = '<div class="proof-loading">Failed to load OTS details.</div>';
   }
 }
 
