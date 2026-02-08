@@ -2,7 +2,7 @@
 'use strict';
 
 const { createHash } = require('node:crypto');
-const { readFileSync } = require('node:fs');
+const { readFileSync, writeFileSync, existsSync } = require('node:fs');
 
 // ── Helpers ──
 
@@ -30,17 +30,33 @@ function fetchUrl(url) {
       }
       var chunks = [];
       res.on('data', function (c) { chunks.push(c); });
-      res.on('end', function () { resolve(Buffer.concat(chunks).toString('utf-8')); });
+      res.on('end', function () { resolve(Buffer.concat(chunks)); });
       res.on('error', reject);
     }).on('error', reject);
   });
 }
 
-function loadTreeContent(source) {
-  if (isUrl(source)) {
-    return fetchUrl(source);
+function fetchText(url) {
+  return fetchUrl(url).then(function (buf) { return buf.toString('utf-8'); });
+}
+
+function loadTreeContent(batchSource) {
+  if (isUrl(batchSource)) {
+    return fetchText(batchSource + '.tree');
   }
-  return Promise.resolve(readFileSync(source, 'utf-8'));
+  var treePath = batchSource + '.tree';
+  return Promise.resolve(readFileSync(treePath, 'utf-8'));
+}
+
+function loadOtsBytes(batchSource) {
+  if (isUrl(batchSource)) {
+    return fetchUrl(batchSource + '.ots').catch(function () { return null; });
+  }
+  var otsPath = batchSource + '.ots';
+  if (existsSync(otsPath)) {
+    return Promise.resolve(readFileSync(otsPath));
+  }
+  return Promise.resolve(null);
 }
 
 // ── Merkle tree rebuild & proof ──
@@ -99,17 +115,68 @@ function walkProof(leafHash, siblings) {
   return current;
 }
 
+// ── OTS ──
+
+async function checkOts(otsBytes, merkleRootHex, batchSource) {
+  var OpenTimestamps;
+  try {
+    OpenTimestamps = require('opentimestamps');
+  } catch {
+    return null;
+  }
+
+  try {
+    var detachedOts = OpenTimestamps.DetachedTimestampFile.deserialize(new Uint8Array(otsBytes));
+    var changed = await OpenTimestamps.upgrade(detachedOts);
+    var newBytes = Buffer.from(detachedOts.serializeToBytes());
+
+    // If upgraded on a local file, overwrite it
+    if (changed && !isUrl(batchSource)) {
+      var otsPath = batchSource + '.ots';
+      writeFileSync(otsPath, newBytes);
+    }
+
+    var hashBytes = Buffer.from(merkleRootHex, 'hex');
+    var detachedOriginal = OpenTimestamps.DetachedTimestampFile.fromBytes(
+      new OpenTimestamps.Ops.OpSHA256(),
+      hashBytes,
+    );
+
+    var verifyResult = await OpenTimestamps.verify(detachedOts, detachedOriginal, {
+      ignoreBitcoinNode: true,
+    });
+
+    if (verifyResult && verifyResult.bitcoin) {
+      return {
+        status: 'verified',
+        height: verifyResult.bitcoin.height,
+        timestamp: new Date(verifyResult.bitcoin.timestamp * 1000).toISOString(),
+      };
+    }
+
+    return { status: 'pending' };
+  } catch {
+    return { status: 'pending' };
+  }
+}
+
 // ── Main ──
 
 async function main() {
   const args = process.argv.slice(2);
 
   if (args.length !== 2) {
-    console.error("Usage: node verify.js <tree-file-or-url> '<json-log-line>'");
+    console.error("Usage: node verify.js <batch-path-or-url> '<json-log-line>'");
+    console.error('');
+    console.error('  Local:  node verify.js /data/logs/supervisor.51 \'<log-line>\'');
+    console.error('          (reads supervisor.51.tree and supervisor.51.ots)');
+    console.error('');
+    console.error('  URL:    node verify.js http://localhost:3201/api/download/supervisor.51 \'<log-line>\'');
+    console.error('          (fetches /api/download/tree/supervisor.51 and /api/download/ots/supervisor.51)');
     process.exit(1);
   }
 
-  const [treeSource, logLine] = args;
+  const [batchSource, logLine] = args;
 
   // 1. Hash the provided log line
   const leafHash = sha256(logLine);
@@ -118,9 +185,9 @@ async function main() {
   // 2. Read .tree content (local file or URL)
   let treeContent;
   try {
-    treeContent = await loadTreeContent(treeSource);
+    treeContent = await loadTreeContent(batchSource);
   } catch (err) {
-    console.error('Error: cannot read tree source: ' + treeSource);
+    console.error('Error: cannot read tree source: ' + batchSource + '.tree');
     console.error(err.message);
     process.exit(1);
   }
@@ -152,7 +219,7 @@ async function main() {
   // 6. Walk the proof to recompute root
   const computedRoot = walkProof(leafHash, siblings);
 
-  // 7. Print results
+  // 7. Print Merkle results
   const valid = computedRoot.equals(root);
 
   console.log('Leaf hash:    ' + leafHex);
@@ -165,6 +232,22 @@ async function main() {
   console.log('Merkle root:  ' + root.toString('hex'));
   console.log('Computed:     ' + computedRoot.toString('hex'));
   console.log('Status:       ' + (valid ? 'VALID' : 'INVALID'));
+
+  // 8. Check OTS status
+  var otsBytes = await loadOtsBytes(batchSource);
+  if (otsBytes) {
+    var merkleRootHex = root.toString('hex');
+    var otsResult = await checkOts(otsBytes, merkleRootHex, batchSource);
+    if (otsResult && otsResult.status === 'verified') {
+      console.log('OTS Status:   VERIFIED ON CHAIN (block #' + otsResult.height + ', ' + otsResult.timestamp + ')');
+    } else if (otsResult && otsResult.status === 'pending') {
+      console.log('OTS Status:   PENDING (awaiting Bitcoin confirmation)');
+    } else {
+      console.log('OTS Status:   NOT TIMESTAMPED');
+    }
+  } else {
+    console.log('OTS Status:   NOT TIMESTAMPED');
+  }
 
   process.exit(valid ? 0 : 1);
 }

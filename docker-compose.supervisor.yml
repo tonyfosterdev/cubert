@@ -61,11 +61,13 @@ services:
       PROTO_PATH: "/app/proto/cubert.proto"
       WORKLOAD_PROTO_PATH: "/app/proto/workload.proto"
       SPIFFE_ENDPOINT_SOCKET: "unix:///run/spire/agent/api.sock"
+      LOG_ARCHIVE_DIR: "/data/logs"
     volumes:
       - ./packages/supervisor/src:/app/src
       - ./proto:/app/proto
       - supervisor-node-modules:/app/node_modules
       - spire-agent-socket:/run/spire/agent
+      - log-archive:/data/logs
     command: npx tsx src/index.ts
     labels:
       com.cubert.service: "supervisor"
@@ -76,6 +78,25 @@ services:
       default:
       brain-network:
       body-network:
+
+  log-archiver:
+    build:
+      context: ./packages/log-archiver
+      dockerfile: Dockerfile.dev
+    environment:
+      LOG_DIR: "/data/logs"
+      WEB_PORT: "3201"
+      NODE_ENV: "development"
+    ports:
+      - "3201:3201"
+    volumes:
+      - ./packages/log-archiver/src:/app/src
+      - log-archiver-node-modules:/app/node_modules
+      - log-archive:/data/logs
+    command: npx tsx src/index.ts
+    depends_on:
+      supervisor:
+        condition: service_started
 
   brain:
     environment:
@@ -125,3 +146,5 @@ volumes:
   spire-agent-socket:
   spire-join-token:
   supervisor-node-modules:
+  log-archive:
+  log-archiver-node-modules:

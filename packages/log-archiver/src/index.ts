@@ -1,15 +1,17 @@
 import { config } from './config';
 import { FileWatcher } from './watcher/FileWatcher';
+import { TimestampService } from './ots/TimestampService';
 import { startServer } from './web/server';
 import logger from './logger';
 
 async function main() {
   logger.info({ logDir: config.logDir, webPort: config.webPort }, 'Starting log archiver');
 
-  const watcher = new FileWatcher(config.logDir);
+  const timestampService = new TimestampService(config.otsCalendars);
+  const watcher = new FileWatcher(config.logDir, timestampService);
   await watcher.start();
 
-  startServer(config.logDir, watcher.getManifest(), config.webPort);
+  startServer(config.logDir, watcher.getManifest(), config.webPort, timestampService);
 
   // Graceful shutdown
   const shutdown = async () => {

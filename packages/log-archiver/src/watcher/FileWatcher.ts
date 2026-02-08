@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { BatchProcessor } from '../processor/BatchProcessor';
 import { Manifest } from '../manifest/Manifest';
+import { TimestampService } from '../ots/TimestampService';
 import logger from '../logger';
 
 export class FileWatcher {
@@ -11,10 +12,10 @@ export class FileWatcher {
   private manifest: Manifest;
   private logDir: string;
 
-  constructor(logDir: string) {
+  constructor(logDir: string, timestampService?: TimestampService) {
     this.logDir = logDir;
     this.manifest = new Manifest(logDir);
-    this.processor = new BatchProcessor(this.manifest);
+    this.processor = new BatchProcessor(this.manifest, timestampService);
   }
 
   async start(): Promise<void> {
@@ -44,8 +45,9 @@ export class FileWatcher {
     // Ignore the directory itself
     if (basename === path.basename(this.logDir)) return false;
 
-    // Ignore .tree files, manifest.json, current.log symlink
+    // Ignore .tree files, .ots files, manifest.json, current.log symlink
     if (basename.endsWith('.tree')) return true;
+    if (basename.endsWith('.ots')) return true;
     if (basename === 'manifest.json') return true;
     if (basename === 'manifest.json.tmp') return true;
     if (basename === 'current.log') return true;

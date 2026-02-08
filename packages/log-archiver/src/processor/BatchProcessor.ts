@@ -4,10 +4,17 @@ import { createInterface } from 'readline';
 import path from 'path';
 import { MerkleTree } from '../merkle/MerkleTree';
 import { Manifest } from '../manifest/Manifest';
+import { TimestampService } from '../ots/TimestampService';
 import logger from '../logger';
 
 export class BatchProcessor {
-  constructor(private manifest: Manifest) {}
+  private manifest: Manifest;
+  private timestampService: TimestampService | null;
+
+  constructor(manifest: Manifest, timestampService?: TimestampService) {
+    this.manifest = manifest;
+    this.timestampService = timestampService ?? null;
+  }
 
   async process(filePath: string): Promise<void> {
     const filename = path.basename(filePath);
@@ -44,6 +51,19 @@ export class BatchProcessor {
     const treePath = path.join(path.dirname(filePath), treeFilename);
     const treeContent = leafHashes.map((h) => h.toString('hex')).join('\n') + '\n';
     await fs.writeFile(treePath, treeContent, 'utf-8');
+
+    // Submit Merkle root to OpenTimestamps
+    if (this.timestampService) {
+      try {
+        const otsBytes = await this.timestampService.stamp(tree.rootHex);
+        if (otsBytes) {
+          const otsPath = path.join(path.dirname(filePath), filename + '.ots');
+          await fs.writeFile(otsPath, otsBytes);
+        }
+      } catch (err) {
+        logger.warn({ err, filename }, 'OTS stamping failed, continuing without timestamp');
+      }
+    }
 
     // Get file stats
     const stats = await fs.stat(filePath);
