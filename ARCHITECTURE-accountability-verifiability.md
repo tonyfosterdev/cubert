@@ -1,5 +1,9 @@
 # Architecture Evolution: Accountability & Verifiability
 
+> **TL;DR** — Cubert is an AI-powered Minecraft bot split into a **Brain** (Claude LLM) and a **Body** (game client). The original design had no way to prove what happened when things went wrong. This document describes four architectural layers added to fix that: network isolation, an authenticated supervisor relay, cryptographic identity (SPIFFE/mTLS), and Bitcoin-anchored tamper-evident logs.
+
+![Accountability Architecture](architecture-accountability.svg)
+
 This document describes the architectural changes made to Cubert since the [original design](https://www.tonyfoster.dev/meet-cubert-trust-judgment-and-lava/), which identified critical gaps in trust, accountability, and verifiability. The original post posed the questions; this is the engineering answer.
 
 ---

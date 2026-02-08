@@ -1,0 +1,195 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 860" font-family="'Segoe UI', Inter, -apple-system, system-ui, sans-serif">
+  <defs>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="108%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity="0.3"/>
+    </filter>
+    <marker id="arrow-gold" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0,0 8,3 0,6" fill="#d29922"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0,0 8,3 0,6" fill="#da3633"/>
+    </marker>
+    <marker id="arrow-red-rev" markerWidth="8" markerHeight="6" refX="0" refY="3" orient="auto">
+      <polygon points="8,0 0,3 8,6" fill="#da3633"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0,0 8,3 0,6" fill="#3fb950"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0,0 8,3 0,6" fill="#f7931a"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1100" height="860" rx="8" fill="#0d1117"/>
+
+  <!-- Title -->
+  <text x="550" y="38" text-anchor="middle" font-size="22" font-weight="700" fill="#e6edf3">Cubert — Accountability Architecture</text>
+  <text x="550" y="58" text-anchor="middle" font-size="12" fill="#8b949e">Four security layers ensuring every Brain↔Body message is authenticated, logged, and tamper-evident</text>
+
+  <!-- ════════════════════════════════════════════ -->
+  <!-- LAYER 3: SPIRE / Identity (top)             -->
+  <!-- ════════════════════════════════════════════ -->
+  <rect x="285" y="80" width="530" height="105" rx="12" fill="#161b2280" stroke="#a371f7" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="550" y="100" text-anchor="middle" font-size="12" font-weight="600" fill="#a371f7" letter-spacing="0.5">LAYER 3 — SPIFFE / SPIRE Identity</text>
+
+  <rect x="310" y="112" width="150" height="50" rx="8" fill="#161b22" stroke="#a371f7" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="385" y="135" text-anchor="middle" font-size="13" font-weight="600" fill="#e6edf3">SPIRE Server</text>
+  <text x="385" y="152" text-anchor="middle" font-size="10" fill="#8b949e">Certificate Authority</text>
+
+  <rect x="480" y="112" width="150" height="50" rx="8" fill="#161b22" stroke="#a371f7" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="555" y="135" text-anchor="middle" font-size="13" font-weight="600" fill="#e6edf3">SPIRE Agent</text>
+  <text x="555" y="152" text-anchor="middle" font-size="10" fill="#8b949e">Workload Attestor</text>
+
+  <!-- SVID issuance lines (dashed purple) -->
+  <line x1="505" y1="162" x2="200" y2="280" stroke="#a371f7" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>
+  <line x1="555" y1="162" x2="550" y2="268" stroke="#a371f7" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>
+  <line x1="605" y1="162" x2="900" y2="280" stroke="#a371f7" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>
+
+  <text x="310" y="218" text-anchor="middle" font-size="9" fill="#a371f7" transform="rotate(-24,310,218)">X.509 SVID</text>
+  <text x="558" y="218" text-anchor="middle" font-size="9" fill="#a371f7">X.509 SVID</text>
+  <text x="790" y="218" text-anchor="middle" font-size="9" fill="#a371f7" transform="rotate(24,790,218)">X.509 SVID</text>
+
+  <!-- ════════════════════════════════════════════ -->
+  <!-- LAYER 1: Network Partitioning (middle)      -->
+  <!-- ════════════════════════════════════════════ -->
+
+  <!-- brain-network boundary -->
+  <rect x="30" y="250" width="340" height="230" rx="12" fill="#1f6feb08" stroke="#1f6feb" stroke-width="2" stroke-dasharray="8,4"/>
+  <text x="200" y="275" text-anchor="middle" font-size="12" font-weight="600" fill="#1f6feb" letter-spacing="0.5">brain-network</text>
+
+  <!-- body-network boundary -->
+  <rect x="730" y="250" width="340" height="230" rx="12" fill="#23863608" stroke="#238636" stroke-width="2" stroke-dasharray="8,4"/>
+  <text x="900" y="275" text-anchor="middle" font-size="12" font-weight="600" fill="#238636" letter-spacing="0.5">body-network</text>
+
+  <!-- Brain box -->
+  <rect x="80" y="290" width="240" height="80" rx="8" fill="#161b22" stroke="#1f6feb" stroke-width="2" filter="url(#shadow)"/>
+  <text x="200" y="318" text-anchor="middle" font-size="16" font-weight="700" fill="#e6edf3">Brain</text>
+  <text x="200" y="337" text-anchor="middle" font-size="11" fill="#8b949e">Claude AI — decides actions</text>
+  <text x="200" y="358" text-anchor="middle" font-size="9" fill="#58a6ff" font-style="italic">spiffe://cubert.local/brain</text>
+
+  <!-- Body box -->
+  <rect x="780" y="290" width="240" height="80" rx="8" fill="#161b22" stroke="#238636" stroke-width="2" filter="url(#shadow)"/>
+  <text x="900" y="318" text-anchor="middle" font-size="16" font-weight="700" fill="#e6edf3">Body</text>
+  <text x="900" y="337" text-anchor="middle" font-size="11" fill="#8b949e">Mineflayer — executes actions</text>
+  <text x="900" y="358" text-anchor="middle" font-size="9" fill="#3fb950" font-style="italic">spiffe://cubert.local/body</text>
+
+  <!-- Minecraft box -->
+  <rect x="790" y="400" width="130" height="50" rx="8" fill="#161b22" stroke="#238636" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="855" y="424" text-anchor="middle" font-size="12" fill="#e6edf3">Minecraft</text>
+  <text x="855" y="440" text-anchor="middle" font-size="9" fill="#8b949e">:25565</text>
+
+  <!-- Scenario box -->
+  <rect x="940" y="400" width="110" height="50" rx="8" fill="#161b22" stroke="#238636" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="995" y="424" text-anchor="middle" font-size="12" fill="#e6edf3">Scenario</text>
+  <text x="995" y="440" text-anchor="middle" font-size="9" fill="#8b949e">RCON</text>
+
+  <!-- Body → Minecraft arrow -->
+  <line x1="870" y1="370" x2="858" y2="400" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+
+  <!-- Scenario → Minecraft arrow -->
+  <line x1="960" y1="425" x2="922" y2="425" stroke="#3fb950" stroke-width="1" marker-end="url(#arrow-green)"/>
+
+  <!-- ════════════════════════════════════════════ -->
+  <!-- LAYER 2: Supervisor (center bridge)         -->
+  <!-- ════════════════════════════════════════════ -->
+  <rect x="420" y="278" width="260" height="110" rx="10" fill="#161b22" stroke="#d29922" stroke-width="2.5" filter="url(#shadow)"/>
+  <text x="550" y="308" text-anchor="middle" font-size="17" font-weight="700" fill="#e6edf3">Supervisor</text>
+  <text x="550" y="328" text-anchor="middle" font-size="11" fill="#d29922">Authenticated Relay</text>
+  <text x="550" y="348" text-anchor="middle" font-size="9" fill="#8b949e" font-style="italic">spiffe://cubert.local/supervisor</text>
+  <text x="550" y="368" text-anchor="middle" font-size="10" fill="#8b949e">Logs every relayed message</text>
+  <text x="550" y="382" text-anchor="middle" font-size="10" fill="#8b949e">:5100 gRPC</text>
+
+  <!-- mTLS connection: Brain ↔ Supervisor -->
+  <line x1="320" y1="325" x2="420" y2="325" stroke="#da3633" stroke-width="2" marker-end="url(#arrow-red)" marker-start="url(#arrow-red-rev)"/>
+  <rect x="330" y="298" width="80" height="17" rx="4" fill="#da363330"/>
+  <text x="370" y="310" text-anchor="middle" font-size="10" font-weight="600" fill="#f85149">mTLS</text>
+  <text x="370" y="350" text-anchor="middle" font-size="9" fill="#8b949e">BrainUplink</text>
+
+  <!-- mTLS connection: Supervisor ↔ Body -->
+  <line x1="680" y1="325" x2="780" y2="325" stroke="#da3633" stroke-width="2" marker-end="url(#arrow-red)" marker-start="url(#arrow-red-rev)"/>
+  <rect x="690" y="298" width="80" height="17" rx="4" fill="#da363330"/>
+  <text x="730" y="310" text-anchor="middle" font-size="10" font-weight="600" fill="#f85149">mTLS</text>
+  <text x="730" y="350" text-anchor="middle" font-size="9" fill="#8b949e">BodyUplink</text>
+
+  <!-- No direct path indicator -->
+  <line x1="370" y1="440" x2="730" y2="440" stroke="#484f58" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <rect x="415" y="450" width="270" height="22" rx="6" fill="#f8514915"/>
+  <text x="550" y="466" text-anchor="middle" font-size="12" font-weight="600" fill="#f85149">No direct path — kernel-level isolation</text>
+
+  <!-- ════════════════════════════════════════════ -->
+  <!-- LAYER 4: Log Pipeline (bottom)              -->
+  <!-- ════════════════════════════════════════════ -->
+  <rect x="50" y="520" width="1000" height="190" rx="12" fill="#f7931a06" stroke="#d29922" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="550" y="545" text-anchor="middle" font-size="12" font-weight="600" fill="#d29922" letter-spacing="0.5">LAYER 4 — Tamper-Evident Verification Pipeline</text>
+
+  <!-- Arrow from Supervisor down into pipeline -->
+  <line x1="550" y1="388" x2="550" y2="510" stroke="#d29922" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.6"/>
+  <text x="563" y="498" font-size="9" fill="#8b949e">pino JSON</text>
+
+  <!-- Shared volume indicator -->
+  <rect x="495" y="505" width="110" height="18" rx="4" fill="#30363d"/>
+  <text x="550" y="517" text-anchor="middle" font-size="9" fill="#8b949e">shared volume</text>
+
+  <!-- Log Archiver -->
+  <rect x="80" y="565" width="180" height="60" rx="8" fill="#161b22" stroke="#d29922" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="170" y="592" text-anchor="middle" font-size="14" font-weight="600" fill="#e6edf3">Log Archiver</text>
+  <text x="170" y="612" text-anchor="middle" font-size="9" fill="#8b949e">FileWatcher + BatchProcessor</text>
+
+  <!-- Merkle Tree -->
+  <rect x="310" y="565" width="180" height="60" rx="8" fill="#161b22" stroke="#d29922" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="400" y="592" text-anchor="middle" font-size="14" font-weight="600" fill="#e6edf3">Merkle Tree</text>
+  <text x="400" y="612" text-anchor="middle" font-size="9" fill="#8b949e">SHA-256 leaf → root</text>
+
+  <!-- OpenTimestamps -->
+  <rect x="540" y="565" width="200" height="60" rx="8" fill="#161b22" stroke="#d29922" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="640" y="592" text-anchor="middle" font-size="14" font-weight="600" fill="#e6edf3">OpenTimestamps</text>
+  <text x="640" y="612" text-anchor="middle" font-size="9" fill="#8b949e">Calendar servers</text>
+
+  <!-- Bitcoin -->
+  <rect x="790" y="560" width="210" height="70" rx="8" fill="#161b22" stroke="#f7931a" stroke-width="2.5" filter="url(#shadow)"/>
+  <text x="895" y="590" text-anchor="middle" font-size="16" font-weight="700" fill="#f7931a">Bitcoin</text>
+  <text x="895" y="610" text-anchor="middle" font-size="10" fill="#8b949e">Immutable blockchain anchor</text>
+  <text x="895" y="624" text-anchor="middle" font-size="9" fill="#8b949e">Publicly verifiable</text>
+
+  <!-- Pipeline arrows -->
+  <line x1="260" y1="595" x2="310" y2="595" stroke="#d29922" stroke-width="1.5" marker-end="url(#arrow-gold)"/>
+  <line x1="490" y1="595" x2="540" y2="595" stroke="#d29922" stroke-width="1.5" marker-end="url(#arrow-gold)"/>
+  <text x="515" y="588" text-anchor="middle" font-size="8" fill="#8b949e">root hash</text>
+  <line x1="740" y1="595" x2="790" y2="595" stroke="#f7931a" stroke-width="1.5" marker-end="url(#arrow-orange)"/>
+  <text x="765" y="588" text-anchor="middle" font-size="8" fill="#8b949e">anchor</text>
+
+  <!-- Verification API callout -->
+  <rect x="250" y="650" width="500" height="35" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="500" y="667" text-anchor="middle" font-size="10" fill="#8b949e" font-family="'SF Mono', 'Fira Code', monospace">GET /api/batches/:filename/verify/:lineNum</text>
+  <text x="500" y="681" text-anchor="middle" font-size="9" fill="#58a6ff">→ Merkle proof + Bitcoin block verification — no secrets needed</text>
+
+  <!-- ════════════════════════════════════════════ -->
+  <!-- Legend                                       -->
+  <!-- ════════════════════════════════════════════ -->
+  <rect x="50" y="730" width="1000" height="110" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="550" y="758" text-anchor="middle" font-size="14" font-weight="700" fill="#e6edf3">Guarantee Chain — Each Layer Closes a Distinct Threat</text>
+
+  <!-- Layer 1 -->
+  <rect x="80" y="775" width="14" height="14" rx="3" fill="none" stroke="#1f6feb" stroke-width="2"/>
+  <text x="102" y="786" font-size="12" font-weight="600" fill="#e6edf3">1. Network Isolation</text>
+  <text x="102" y="802" font-size="10" fill="#8b949e">Every message must transit the Supervisor</text>
+
+  <!-- Layer 2 -->
+  <rect x="340" y="775" width="14" height="14" rx="3" fill="none" stroke="#d29922" stroke-width="2"/>
+  <text x="362" y="786" font-size="12" font-weight="600" fill="#e6edf3">2. Supervisor Relay</text>
+  <text x="362" y="802" font-size="10" fill="#8b949e">Every message is logged with full context</text>
+
+  <!-- Layer 3 -->
+  <rect x="600" y="775" width="14" height="14" rx="3" fill="none" stroke="#a371f7" stroke-width="2"/>
+  <text x="622" y="786" font-size="12" font-weight="600" fill="#e6edf3">3. SPIFFE / mTLS</text>
+  <text x="622" y="802" font-size="10" fill="#8b949e">Only attested services can connect</text>
+
+  <!-- Layer 4 -->
+  <rect x="840" y="775" width="14" height="14" rx="3" fill="none" stroke="#f7931a" stroke-width="2"/>
+  <text x="862" y="786" font-size="12" font-weight="600" fill="#e6edf3">4. Bitcoin Anchor</text>
+  <text x="862" y="802" font-size="10" fill="#8b949e">Logs are tamper-evident forever</text>
+
+  <!-- Bottom summary -->
+  <text x="550" y="828" text-anchor="middle" font-size="11" fill="#58a6ff" font-style="italic">"We can't even prove what happened." — Now we can.</text>
+</svg>
