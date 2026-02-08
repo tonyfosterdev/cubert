@@ -53,8 +53,8 @@ services:
 
   supervisor:
     build:
-      context: ./packages/supervisor
-      dockerfile: Dockerfile.dev
+      context: .
+      dockerfile: packages/supervisor/Dockerfile.dev
     environment:
       SUPERVISOR_PORT: "5100"
       NODE_ENV: "development"
@@ -62,8 +62,10 @@ services:
       WORKLOAD_PROTO_PATH: "/app/proto/workload.proto"
       SPIFFE_ENDPOINT_SOCKET: "unix:///run/spire/agent/api.sock"
       LOG_ARCHIVE_DIR: "/data/logs"
+      NODE_PATH: "/app/node_modules"
     volumes:
       - ./packages/supervisor/src:/app/src
+      - ./packages/shared/spiffe:/shared/spiffe
       - ./proto:/app/proto
       - supervisor-node-modules:/app/node_modules
       - spire-agent-socket:/run/spire/agent
@@ -81,8 +83,8 @@ services:
 
   log-archiver:
     build:
-      context: ./packages/log-archiver
-      dockerfile: Dockerfile.dev
+      context: .
+      dockerfile: packages/log-archiver/Dockerfile.dev
     environment:
       LOG_DIR: "/data/logs"
       WEB_PORT: "3201"
@@ -112,7 +114,6 @@ services:
       supervisor:
         condition: service_started
     networks:
-      default:
       brain-network:
 
   body:
@@ -129,7 +130,22 @@ services:
       supervisor:
         condition: service_started
     networks:
+      body-network:
+
+  minecraft:
+    networks:
       default:
+      body-network:
+
+  scenario:
+    networks:
+      default:
+      body-network:
+
+  prometheus:
+    networks:
+      default:
+      brain-network:
       body-network:
 
 networks:
