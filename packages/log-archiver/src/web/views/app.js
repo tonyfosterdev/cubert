@@ -262,13 +262,27 @@ function renderOtsStep(step) {
 
   if (step.type === 'append') {
     opLabel = 'append';
-    valueHtml = '<span class="ots-highlight">' + escapeHtml(step.detail) + '</span>';
+    if (step.computed) {
+      valueHtml = '<span class="ots-hash-muted">' + escapeHtml(step.computed.before) + '</span>' +
+        '<span class="ots-highlight">' + escapeHtml(step.computed.arg) + '</span>';
+    } else {
+      valueHtml = '<span class="ots-highlight">' + escapeHtml(step.detail) + '</span>';
+    }
   } else if (step.type === 'prepend') {
     opLabel = 'prepend';
-    valueHtml = '<span class="ots-highlight">' + escapeHtml(step.detail) + '</span>';
+    if (step.computed) {
+      valueHtml = '<span class="ots-highlight">' + escapeHtml(step.computed.arg) + '</span>' +
+        '<span class="ots-hash-muted">' + escapeHtml(step.computed.before) + '</span>';
+    } else {
+      valueHtml = '<span class="ots-highlight">' + escapeHtml(step.detail) + '</span>';
+    }
   } else if (step.type === 'sha256' || step.type === 'ripemd160' || step.type === 'sha1') {
     opLabel = step.type + '()';
-    valueHtml = '';
+    if (step.computed && step.computed.hash) {
+      valueHtml = escapeHtml(step.computed.hash);
+    } else {
+      valueHtml = '<span class="ots-highlight-muted">hash current value</span>';
+    }
   } else if (step.type === 'pending') {
     barClass = 'pending';
     opLabel = 'verify';
@@ -308,6 +322,12 @@ async function loadOtsDetails(filename) {
       }
     }
     var forkKeys = Object.keys(forks).sort(function(a, b) { return a - b; });
+
+    // Compute running hash values through the chain
+    var lastSharedHash = await processChainValues(sharedSteps, data.fileHash);
+    for (var f = 0; f < forkKeys.length; f++) {
+      await processChainValues(forks[forkKeys[f]], lastSharedHash);
+    }
 
     var html = '<div class="ots-chain">';
 
@@ -357,6 +377,56 @@ async function loadOtsDetails(filename) {
   } catch (err) {
     topDrawerBody.innerHTML = '<div class="proof-loading">Failed to load OTS details.</div>';
   }
+}
+
+// ── Crypto Helpers ──
+
+function hexToBytes(hex) {
+  var bytes = new Uint8Array(hex.length / 2);
+  for (var i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+  }
+  return bytes;
+}
+
+function bytesToHex(bytes) {
+  var hex = '';
+  for (var i = 0; i < bytes.length; i++) {
+    hex += bytes[i].toString(16).padStart(2, '0');
+  }
+  return hex;
+}
+
+async function sha256Hex(hexStr) {
+  var buf = await crypto.subtle.digest('SHA-256', hexToBytes(hexStr));
+  return bytesToHex(new Uint8Array(buf));
+}
+
+async function processChainValues(steps, startHash) {
+  var current = startHash;
+  for (var i = 0; i < steps.length; i++) {
+    var step = steps[i];
+    if (!current) { step.computed = null; continue; }
+    if (step.type === 'append') {
+      step.computed = { before: current, arg: step.detail };
+      current = current + step.detail;
+    } else if (step.type === 'prepend') {
+      step.computed = { before: current, arg: step.detail };
+      current = step.detail + current;
+    } else if (step.type === 'sha256') {
+      current = await sha256Hex(current);
+      step.computed = { hash: current };
+    } else if (step.type === 'sha1') {
+      try {
+        var buf = await crypto.subtle.digest('SHA-1', hexToBytes(current));
+        current = bytesToHex(new Uint8Array(buf));
+        step.computed = { hash: current };
+      } catch(e) { current = null; step.computed = null; }
+    } else if (step.type === 'ripemd160') {
+      current = null; step.computed = null;
+    }
+  }
+  return current;
 }
 
 // ── Helpers ──

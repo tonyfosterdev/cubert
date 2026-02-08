@@ -590,6 +590,15 @@ tbody tr:hover {
   color: #d29922;
 }
 
+.ots-step-value .ots-highlight-muted {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.ots-step-value .ots-hash-muted {
+  color: var(--text-muted);
+}
+
 .ots-step-value a {
   color: var(--accent);
   text-decoration: none;
